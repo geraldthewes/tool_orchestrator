@@ -12,6 +12,8 @@ from dataclasses import dataclass, field
 from typing import Optional, Callable
 
 from .llm_call import LLMClient
+from .config_loader import load_delegates_config
+from .models import DelegateConfig, DelegatesConfiguration
 from .tools import (
     search,
     format_search_results,
@@ -19,11 +21,9 @@ from .tools import (
     format_python_result,
     calculate,
     format_math_result,
-    call_gpt_oss,
-    call_qwen_coder,
-    call_nemotron_nano,
     format_delegate_result,
 )
+from .tools.llm_delegate import call_delegate
 
 logger = logging.getLogger(__name__)
 
@@ -62,8 +62,8 @@ class ToolOrchestrator:
     4. Produce final answers
     """
 
-    # Tool registry mapping tool names to handler functions
-    TOOL_HANDLERS: dict[str, Callable] = {
+    # Static tool handlers (non-delegate tools)
+    _STATIC_TOOL_HANDLERS: dict[str, Callable] = {
         "web_search": lambda params: search(
             query=params.get("query", ""),
             categories=params.get("categories"),
@@ -76,30 +76,13 @@ class ToolOrchestrator:
         "calculate": lambda params: calculate(
             expression=params.get("expression", ""),
         ),
-        "ask_gpt_oss": lambda params: call_gpt_oss(
-            prompt=params.get("prompt", ""),
-            temperature=params.get("temperature", 0.7),
-            max_tokens=params.get("max_tokens", 2048),
-        ),
-        "ask_coder": lambda params: call_qwen_coder(
-            prompt=params.get("prompt", ""),
-            temperature=params.get("temperature", 0.3),
-            max_tokens=params.get("max_tokens", 2048),
-        ),
-        "ask_nemotron_nano": lambda params: call_nemotron_nano(
-            prompt=params.get("prompt", ""),
-            temperature=params.get("temperature", 0.7),
-        ),
     }
 
-    # Tool formatters for converting raw results to LLM-friendly strings
-    TOOL_FORMATTERS: dict[str, Callable] = {
+    # Static tool formatters
+    _STATIC_TOOL_FORMATTERS: dict[str, Callable] = {
         "web_search": format_search_results,
         "python_execute": format_python_result,
         "calculate": format_math_result,
-        "ask_gpt_oss": format_delegate_result,
-        "ask_coder": format_delegate_result,
-        "ask_nemotron_nano": format_delegate_result,
     }
 
     def __init__(
@@ -107,6 +90,7 @@ class ToolOrchestrator:
         llm_client: Optional[LLMClient] = None,
         max_steps: int = 10,
         verbose: bool = False,
+        delegates_config: Optional[DelegatesConfiguration] = None,
     ):
         """
         Initialize the orchestrator.
@@ -115,78 +99,147 @@ class ToolOrchestrator:
             llm_client: LLM client for calling the orchestrator model
             max_steps: Maximum number of reasoning steps
             verbose: Enable verbose logging
+            delegates_config: Configuration for delegate LLMs (loaded from YAML if not provided)
         """
         self.llm_client = llm_client or LLMClient()
         self.max_steps = max_steps
         self.verbose = verbose
         self.steps: list[OrchestrationStep] = []
 
+        # Load delegates configuration
+        self.delegates_config = delegates_config or load_delegates_config()
+
+        # Initialize tool registries with static tools
+        self.tool_handlers: dict[str, Callable] = dict(self._STATIC_TOOL_HANDLERS)
+        self.tool_formatters: dict[str, Callable] = dict(self._STATIC_TOOL_FORMATTERS)
+
+        # Register delegate tools dynamically
+        self._register_delegate_tools()
+
+    def _register_delegate_tools(self) -> None:
+        """Register tool handlers for all configured delegates."""
+        for role, delegate_config in self.delegates_config.delegates.items():
+            tool_name = delegate_config.tool_name
+            handler = self._create_delegate_handler(delegate_config)
+            self.tool_handlers[tool_name] = handler
+            self.tool_formatters[tool_name] = format_delegate_result
+            logger.debug(f"Registered delegate tool: {tool_name}")
+
+    def _create_delegate_handler(self, config: DelegateConfig) -> Callable:
+        """
+        Create a handler function for a delegate LLM.
+
+        Args:
+            config: Delegate configuration
+
+        Returns:
+            Handler function for the delegate
+        """
+        def handler(params: dict) -> dict:
+            prompt = params.get("prompt", "")
+            temperature = params.get("temperature", config.defaults.temperature)
+            max_tokens = params.get("max_tokens", config.defaults.max_tokens)
+
+            # Clamp max_tokens to capability limit
+            if max_tokens > config.capabilities.max_output_tokens:
+                logger.warning(
+                    f"Requested max_tokens ({max_tokens}) exceeds limit "
+                    f"({config.capabilities.max_output_tokens}) for {config.role}, clamping"
+                )
+                max_tokens = config.capabilities.max_output_tokens
+
+            return call_delegate(
+                connection=config.connection,
+                prompt=prompt,
+                temperature=temperature,
+                max_tokens=max_tokens,
+            )
+
+        return handler
+
     def _build_system_prompt(self) -> str:
         """Build the system prompt with tool definitions."""
-        tool_descriptions = """
-You are an AI assistant with access to the following tools:
+        # Start with static tools
+        prompt_parts = [
+            "You are an AI assistant with access to the following tools:",
+            "",
+            "1. **web_search**: Search the web for current information",
+            '   - Parameters: {"query": "search query", "categories": "optional category", "num_results": 5}',
+            "",
+            "2. **python_execute**: Execute Python code safely in a sandbox",
+            '   - Parameters: {"code": "python code to execute"}',
+            "   - Allowed modules: math, statistics, random, datetime, json, re, collections, itertools, functools",
+            "",
+            "3. **calculate**: Perform mathematical calculations",
+            '   - Parameters: {"expression": "math expression like 2+2 or sqrt(16)"}',
+        ]
 
-1. **web_search**: Search the web for current information
-   - Parameters: {"query": "search query", "categories": "optional category", "num_results": 5}
+        # Add delegate tools dynamically
+        tool_num = 4
+        for role, delegate in self.delegates_config.delegates.items():
+            specializations = ", ".join(delegate.capabilities.specializations)
+            prompt_parts.extend([
+                "",
+                f"{tool_num}. **{delegate.tool_name}**: Delegate to {delegate.display_name}",
+                f'   - Parameters: {{"prompt": "detailed question or task", "temperature": {delegate.defaults.temperature}, "max_tokens": {delegate.defaults.max_tokens}}}',
+                f"   - Context limit: {delegate.capabilities.context_length:,} tokens",
+                f"   - Best for: {specializations}",
+                f"   - {delegate.description}",
+            ])
+            tool_num += 1
 
-2. **python_execute**: Execute Python code safely in a sandbox
-   - Parameters: {"code": "python code to execute"}
-   - Allowed modules: math, statistics, random, datetime, json, re, collections, itertools, functools
+        # Add response format and examples
+        prompt_parts.extend([
+            "",
+            "## Response Format",
+            "",
+            "You must respond using the following format:",
+            "",
+            "**Thought**: [Your reasoning about what to do next]",
+            '**Action**: [Tool name to use, or "Final Answer" if done]',
+            "**Action Input**: [JSON parameters for the tool, or the final response text]",
+            "",
+            "## Examples",
+            "",
+            "Example 1 - Using web search:",
+            "**Thought**: I need to find current information about this topic.",
+            "**Action**: web_search",
+            '**Action Input**: {"query": "latest news about AI"}',
+            "",
+            "Example 2 - Using calculator:",
+            "**Thought**: I need to calculate this mathematical expression.",
+            "**Action**: calculate",
+            '**Action Input**: {"expression": "sqrt(144) + 10**2"}',
+        ])
 
-3. **calculate**: Perform mathematical calculations
-   - Parameters: {"expression": "math expression like 2+2 or sqrt(16)"}
+        # Add a dynamic example for the first delegate if available
+        if self.delegates_config.delegates:
+            first_delegate = list(self.delegates_config.delegates.values())[0]
+            prompt_parts.extend([
+                "",
+                f"Example 3 - Delegating to {first_delegate.display_name}:",
+                f"**Thought**: This requires {first_delegate.capabilities.specializations[0] if first_delegate.capabilities.specializations else 'expert analysis'}.",
+                f"**Action**: {first_delegate.tool_name}",
+                '**Action Input**: {"prompt": "Analyze the implications of quantum computing on cryptography"}',
+            ])
 
-4. **ask_gpt_oss**: Delegate complex reasoning to GPT-OSS-120B (expert model)
-   - Parameters: {"prompt": "detailed question or task"}
-   - Use for: Complex analysis, multi-step reasoning, detailed explanations
+        prompt_parts.extend([
+            "",
+            "Example 4 - Final answer:",
+            "**Thought**: I have gathered all the information needed to answer.",
+            "**Action**: Final Answer",
+            "**Action Input**: The answer to your question is...",
+            "",
+            "## Important Rules",
+            "",
+            "1. Always start with a **Thought** explaining your reasoning",
+            "2. Use tools when you need external information or computation",
+            "3. Delegate complex tasks to appropriate expert LLMs",
+            "4. When you have enough information, provide a **Final Answer**",
+            "5. Be concise but thorough in your final answers",
+        ])
 
-5. **ask_coder**: Delegate coding tasks to Qwen3-Coder-30B
-   - Parameters: {"prompt": "coding task or question"}
-   - Use for: Writing code, debugging, code review, technical implementations
-
-6. **ask_nemotron_nano**: Delegate to Nemotron-3-Nano for fast reasoning
-   - Parameters: {"prompt": "question or task"}
-   - Use for: Quick answers, simple reasoning, fast responses
-
-## Response Format
-
-You must respond using the following format:
-
-**Thought**: [Your reasoning about what to do next]
-**Action**: [Tool name to use, or "Final Answer" if done]
-**Action Input**: [JSON parameters for the tool, or the final response text]
-
-## Examples
-
-Example 1 - Using web search:
-**Thought**: I need to find current information about this topic.
-**Action**: web_search
-**Action Input**: {"query": "latest news about AI"}
-
-Example 2 - Using calculator:
-**Thought**: I need to calculate this mathematical expression.
-**Action**: calculate
-**Action Input**: {"expression": "sqrt(144) + 10**2"}
-
-Example 3 - Delegating to expert:
-**Thought**: This requires deep analysis, I should delegate to GPT-OSS.
-**Action**: ask_gpt_oss
-**Action Input**: {"prompt": "Analyze the implications of quantum computing on cryptography"}
-
-Example 4 - Final answer:
-**Thought**: I have gathered all the information needed to answer.
-**Action**: Final Answer
-**Action Input**: The answer to your question is...
-
-## Important Rules
-
-1. Always start with a **Thought** explaining your reasoning
-2. Use tools when you need external information or computation
-3. Delegate complex tasks to appropriate expert LLMs
-4. When you have enough information, provide a **Final Answer**
-5. Be concise but thorough in your final answers
-"""
-        return tool_descriptions
+        return "\n".join(prompt_parts)
 
     def _parse_response(self, response: str) -> OrchestrationStep:
         """
@@ -259,7 +312,7 @@ Example 4 - Final answer:
         Returns:
             ToolResult with execution outcome
         """
-        if tool_name not in self.TOOL_HANDLERS:
+        if tool_name not in self.tool_handlers:
             return ToolResult(
                 tool_name=tool_name,
                 success=False,
@@ -267,11 +320,11 @@ Example 4 - Final answer:
             )
 
         try:
-            handler = self.TOOL_HANDLERS[tool_name]
+            handler = self.tool_handlers[tool_name]
             raw_result = handler(params)
 
             # Format the result for the LLM
-            formatter = self.TOOL_FORMATTERS.get(tool_name)
+            formatter = self.tool_formatters.get(tool_name)
             if formatter:
                 formatted_result = formatter(raw_result)
             else:

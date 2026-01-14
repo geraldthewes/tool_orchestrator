@@ -1,0 +1,66 @@
+# Delegate LLM Configuration
+# Defines available LLMs the orchestrator can delegate tasks to.
+#
+# Each delegate becomes a tool named "ask_{role}" (e.g., ask_reasoner).
+# Environment variables are supported with ${VAR:-default} syntax.
+
+version: "1.0"
+
+delegates:
+  reasoner:
+    display_name: "Reasoning Expert"
+    connection:
+      type: "openai_compatible"
+      base_url: "${REASONING_LLM_BASE_URL:-http://localhost:30000/v1}"
+      model: "${REASONING_LLM_MODEL:-openai/gpt-oss-120b}"
+    capabilities:
+      context_length: 32768
+      max_output_tokens: 4096
+      specializations:
+        - "complex_reasoning"
+        - "multi_step_analysis"
+        - "detailed_explanations"
+        - "research_synthesis"
+    defaults:
+      temperature: 0.7
+      max_tokens: 2048
+    description: "Delegate complex reasoning tasks requiring deep analysis, multi-step thinking, or synthesis of multiple concepts."
+
+  coder:
+    display_name: "Coding Expert"
+    connection:
+      type: "openai_compatible"
+      base_url: "${CODING_LLM_BASE_URL:-http://localhost:8000/v1}"
+      model: "${CODING_LLM_MODEL:-qwen3-coder}"
+    capabilities:
+      context_length: 131072
+      max_output_tokens: 8192
+      specializations:
+        - "code_generation"
+        - "debugging"
+        - "code_review"
+        - "refactoring"
+        - "technical_documentation"
+    defaults:
+      temperature: 0.3
+      max_tokens: 2048
+    description: "Delegate coding tasks including code generation, debugging, code review, and technical implementations."
+
+  fast:
+    display_name: "Fast Responder"
+    connection:
+      type: "ollama"
+      base_url: "${FAST_LLM_URL:-http://localhost:11434/api/chat}"
+      model: "${FAST_LLM_MODEL:-nemotron-3-nano}"
+    capabilities:
+      context_length: 8192
+      max_output_tokens: 2048
+      specializations:
+        - "quick_answers"
+        - "simple_reasoning"
+        - "summarization"
+        - "classification"
+    defaults:
+      temperature: 0.7
+      max_tokens: 1024
+    description: "Delegate simple tasks requiring fast responses. Good for quick reasoning, simple Q&A, and time-sensitive queries."

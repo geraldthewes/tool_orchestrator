@@ -158,7 +158,7 @@ class TestOrchestrator:
         assert "web_search" in prompt
         assert "python_execute" in prompt
         assert "calculate" in prompt
-        assert "ask_gpt_oss" in prompt
+        assert "ask_reasoner" in prompt
         assert "ask_coder" in prompt
 
         # Check format instructions
@@ -323,14 +323,14 @@ class TestToolHandlers:
             "web_search",
             "python_execute",
             "calculate",
-            "ask_gpt_oss",
+            "ask_reasoner",
             "ask_coder",
-            "ask_nemotron_nano",
+            "ask_fast",
         ]
 
         for tool in expected_tools:
-            assert tool in orchestrator.TOOL_HANDLERS, f"Missing handler for {tool}"
-            assert tool in orchestrator.TOOL_FORMATTERS, f"Missing formatter for {tool}"
+            assert tool in orchestrator.tool_handlers, f"Missing handler for {tool}"
+            assert tool in orchestrator.tool_formatters, f"Missing formatter for {tool}"
 
 
 class TestRunQueryConvenience:
