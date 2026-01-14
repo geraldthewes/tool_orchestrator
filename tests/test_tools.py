@@ -78,7 +78,7 @@ class TestMathSolver:
 
     def test_syntax_error(self):
         """Test handling of syntax errors."""
-        result = calculate("2 + + 2")
+        result = calculate("2 +* 2")
         assert result["success"] is False
         assert "Syntax error" in result["error"]
 
