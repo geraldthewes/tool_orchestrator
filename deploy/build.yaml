@@ -1,0 +1,24 @@
+owner: code-agent
+repo_url: https://github.com/geraldthewes/tool_orchestrator.git
+git_ref: main
+dockerfile_path: Dockerfile
+image_name: tool-orchestrator
+image_tags:
+  - latest
+registry_url: registry.cluster:5000
+
+test:
+  entry_point: false
+  gpu_required: false
+  python_cwd: "."
+  python_command: "python-executor run --requirements requirements.txt --file -m pytest tests/ -v"
+
+resource_limits:
+  build:
+    cpu: "2000"
+    memory: "4096"
+    disk: "10240"
+  test:
+    cpu: "2000"
+    memory: "2048"
+    disk: "5120"
