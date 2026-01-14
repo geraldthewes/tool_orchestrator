@@ -52,11 +52,21 @@ class ToolConfig:
 
 
 @dataclass
+class ServerConfig:
+    """Configuration for the FastAPI server."""
+    host: str = os.getenv("SERVER_HOST", "0.0.0.0")
+    port: int = int(os.getenv("SERVER_PORT", "8000"))
+    workers: int = int(os.getenv("SERVER_WORKERS", "1"))
+    reload: bool = os.getenv("SERVER_RELOAD", "false").lower() == "true"
+
+
+@dataclass
 class Config:
     """Main configuration container."""
     orchestrator: OrchestratorConfig
     delegates: DelegateLLMConfig
     tools: ToolConfig
+    server: ServerConfig
     log_level: str = os.getenv("LOG_LEVEL", "INFO")
 
 
@@ -66,6 +76,7 @@ def get_config() -> Config:
         orchestrator=OrchestratorConfig(),
         delegates=DelegateLLMConfig(),
         tools=ToolConfig(),
+        server=ServerConfig(),
     )
 
 

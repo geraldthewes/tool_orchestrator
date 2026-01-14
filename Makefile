@@ -1,6 +1,6 @@
 # ToolOrchestra Makefile
 
-.PHONY: help install setup test lint format clean interactive query check-endpoint
+.PHONY: help install setup test lint format clean interactive query check-endpoint server server-dev
 
 help:
 	@echo "ToolOrchestra Commands:"
@@ -19,6 +19,10 @@ help:
 	@echo "  make interactive   - Start interactive CLI"
 	@echo "  make query Q=\"...\" - Run a single query"
 	@echo "  make check-endpoint- Test the orchestrator endpoint"
+	@echo ""
+	@echo "API Server:"
+	@echo "  make server        - Start API server"
+	@echo "  make server-dev    - Start API server with auto-reload"
 	@echo ""
 
 # Setup
@@ -62,3 +66,10 @@ check-endpoint:
 		-H "Content-Type: application/json" \
 		-d "{\"model\": \"$$ORCHESTRATOR_MODEL\", \"messages\": [{\"role\": \"user\", \"content\": \"Say hello\"}], \"max_tokens\": 50}" \
 		| python -m json.tool || echo "Endpoint not responding"
+
+# API Server
+server:
+	uvicorn src.api.main:app --host 0.0.0.0 --port 8000
+
+server-dev:
+	uvicorn src.api.main:app --reload --host 0.0.0.0 --port 8000
