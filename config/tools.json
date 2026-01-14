@@ -52,60 +52,7 @@
         },
         "required": ["expression"]
       }
-    },
-    {
-      "name": "ask_gpt_oss",
-      "description": "Delegate complex reasoning tasks to the reasoning LLM. Use for difficult problems requiring deep reasoning.",
-      "endpoint": "http://localhost:30000/v1/chat/completions",
-      "type": "llm",
-      "model": "openai/gpt-oss-120b",
-      "note": "Actual endpoint comes from REASONING_LLM_BASE_URL environment variable",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "prompt": {
-            "type": "string",
-            "description": "The question or task to delegate"
-          }
-        },
-        "required": ["prompt"]
-      }
-    },
-    {
-      "name": "ask_coder",
-      "description": "Delegate coding tasks to the coding LLM. Use for writing, reviewing, or debugging code.",
-      "endpoint": "http://localhost:8000/v1/chat/completions",
-      "type": "llm",
-      "model": "qwen3-coder",
-      "note": "Actual endpoint comes from CODING_LLM_BASE_URL environment variable",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "prompt": {
-            "type": "string",
-            "description": "The coding task or question"
-          }
-        },
-        "required": ["prompt"]
-      }
-    },
-    {
-      "name": "ask_nemotron_nano",
-      "description": "Delegate to the fast LLM for quick reasoning. Use for quick responses when speed matters more than maximum capability.",
-      "endpoint": "http://localhost:11434/api/chat",
-      "type": "ollama",
-      "model": "nemotron-3-nano",
-      "note": "Actual endpoint comes from FAST_LLM_URL environment variable",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "prompt": {
-            "type": "string",
-            "description": "The question or task"
-          }
-        },
-        "required": ["prompt"]
-      }
     }
-  ]
+  ],
+  "note": "Delegate LLMs are configured in delegates.yaml, not here."
 }

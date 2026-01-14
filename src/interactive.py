@@ -13,6 +13,7 @@ import sys
 from typing import Optional
 
 from .config import config
+from .config_loader import load_delegates_config
 from .orchestrator import ToolOrchestrator
 from .llm_call import LLMClient
 
@@ -51,7 +52,7 @@ Type your questions or tasks below.
 
 def print_tools() -> None:
     """Print available tools."""
-    tools = """
+    print("""
 Available Tools:
 ────────────────────────────────────────────────────────────────
 1. web_search      - Search the web via SearXNG
@@ -59,12 +60,14 @@ Available Tools:
 3. calculate       - Evaluate mathematical expressions
 
 Delegate LLMs:
-────────────────────────────────────────────────────────────────
-4. ask_gpt_oss       - Reasoning LLM (complex reasoning)
-5. ask_coder         - Coding LLM (code generation)
-6. ask_nemotron_nano - Fast LLM (quick reasoning)
-"""
-    print(tools)
+────────────────────────────────────────────────────────────────""")
+
+    # Dynamically load delegate tools from config
+    delegates_config = load_delegates_config()
+    for i, (role, delegate) in enumerate(delegates_config.delegates.items(), start=4):
+        tool_name = delegate.tool_name.ljust(16)
+        print(f"{i}. {tool_name} - {delegate.display_name}")
+    print()
 
 
 def print_trace(orchestrator: ToolOrchestrator) -> None:
@@ -206,8 +209,7 @@ Examples:
   %(prog)s -v                 # Start with verbose logging
   %(prog)s -q "What is 2+2?"  # Run a single query
 
-Available tools: web_search, python_execute, calculate,
-                 ask_gpt_oss, ask_coder, ask_nemotron_nano
+Use /tools in interactive mode to see available tools and delegates.
 """,
     )
 
