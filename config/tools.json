@@ -1,0 +1,111 @@
+{
+  "orchestrator": {
+    "endpoint": "http://localhost:8001/v1/chat/completions",
+    "model": "nvidia/Nemotron-Orchestrator-8B",
+    "note": "Actual endpoint comes from ORCHESTRATOR_BASE_URL environment variable"
+  },
+  "tools": [
+    {
+      "name": "web_search",
+      "description": "Search the web for current information using SearXNG metasearch engine",
+      "endpoint": "http://localhost:8080/search",
+      "type": "http",
+      "method": "GET",
+      "note": "Actual endpoint comes from SEARXNG_ENDPOINT environment variable",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "The search query"
+          }
+        },
+        "required": ["query"]
+      }
+    },
+    {
+      "name": "python_execute",
+      "description": "Execute Python code safely in a sandbox. Use for calculations, data processing, or generating code outputs.",
+      "type": "local",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "description": "Python code to execute"
+          }
+        },
+        "required": ["code"]
+      }
+    },
+    {
+      "name": "calculate",
+      "description": "Perform mathematical calculations. Use for arithmetic, algebra, or any numerical computation.",
+      "type": "local",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "expression": {
+            "type": "string",
+            "description": "Mathematical expression to evaluate (e.g., '2 + 2 * 3')"
+          }
+        },
+        "required": ["expression"]
+      }
+    },
+    {
+      "name": "ask_gpt_oss",
+      "description": "Delegate complex reasoning tasks to the reasoning LLM. Use for difficult problems requiring deep reasoning.",
+      "endpoint": "http://localhost:30000/v1/chat/completions",
+      "type": "llm",
+      "model": "openai/gpt-oss-120b",
+      "note": "Actual endpoint comes from REASONING_LLM_BASE_URL environment variable",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "prompt": {
+            "type": "string",
+            "description": "The question or task to delegate"
+          }
+        },
+        "required": ["prompt"]
+      }
+    },
+    {
+      "name": "ask_coder",
+      "description": "Delegate coding tasks to the coding LLM. Use for writing, reviewing, or debugging code.",
+      "endpoint": "http://localhost:8000/v1/chat/completions",
+      "type": "llm",
+      "model": "qwen3-coder",
+      "note": "Actual endpoint comes from CODING_LLM_BASE_URL environment variable",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "prompt": {
+            "type": "string",
+            "description": "The coding task or question"
+          }
+        },
+        "required": ["prompt"]
+      }
+    },
+    {
+      "name": "ask_nemotron_nano",
+      "description": "Delegate to the fast LLM for quick reasoning. Use for quick responses when speed matters more than maximum capability.",
+      "endpoint": "http://localhost:11434/api/chat",
+      "type": "ollama",
+      "model": "nemotron-3-nano",
+      "note": "Actual endpoint comes from FAST_LLM_URL environment variable",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "prompt": {
+            "type": "string",
+            "description": "The question or task"
+          }
+        },
+        "required": ["prompt"]
+      }
+    }
+  ]
+}

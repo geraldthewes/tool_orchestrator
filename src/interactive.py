@@ -1,0 +1,274 @@
+#!/usr/bin/env python3
+"""
+ToolOrchestra Interactive CLI
+
+A command-line interface for testing LLM orchestration
+with tools and delegate LLMs.
+"""
+
+import argparse
+import json
+import logging
+import sys
+from typing import Optional
+
+from .config import config
+from .orchestrator import ToolOrchestrator
+from .llm_call import LLMClient
+
+
+def setup_logging(verbose: bool = False) -> None:
+    """Configure logging based on verbosity level."""
+    level = logging.DEBUG if verbose else logging.INFO
+    logging.basicConfig(
+        level=level,
+        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+        handlers=[logging.StreamHandler(sys.stderr)],
+    )
+
+
+def print_banner() -> None:
+    """Print the welcome banner."""
+    banner = """
+╔════════════════════════════════════════════════════════════════╗
+║                    ToolOrchestra Interactive                    ║
+║                                                                 ║
+║  ReAct-style LLM orchestration with tools and delegates        ║
+╚════════════════════════════════════════════════════════════════╝
+
+Available commands:
+  /help     - Show this help message
+  /trace    - Show the trace of the last query
+  /tools    - List available tools
+  /verbose  - Toggle verbose mode
+  /clear    - Clear conversation history
+  /quit     - Exit the CLI
+
+Type your questions or tasks below.
+"""
+    print(banner)
+
+
+def print_tools() -> None:
+    """Print available tools."""
+    tools = """
+Available Tools:
+────────────────────────────────────────────────────────────────
+1. web_search      - Search the web via SearXNG
+2. python_execute  - Execute Python code in a sandbox
+3. calculate       - Evaluate mathematical expressions
+
+Delegate LLMs:
+────────────────────────────────────────────────────────────────
+4. ask_gpt_oss       - Reasoning LLM (complex reasoning)
+5. ask_coder         - Coding LLM (code generation)
+6. ask_nemotron_nano - Fast LLM (quick reasoning)
+"""
+    print(tools)
+
+
+def print_trace(orchestrator: ToolOrchestrator) -> None:
+    """Print the trace of the last orchestration run."""
+    trace = orchestrator.get_trace()
+    if not trace:
+        print("\nNo trace available. Run a query first.\n")
+        return
+
+    print("\n" + "═" * 70)
+    print("ORCHESTRATION TRACE")
+    print("═" * 70)
+
+    for step in trace:
+        print(f"\n┌─ Step {step['step']}" + ("  [FINAL]" if step["is_final"] else ""))
+        print("│")
+        if step["reasoning"]:
+            print(f"│  Thought: {step['reasoning']}")
+        if step["action"]:
+            print(f"│  Action: {step['action']}")
+        if step["action_input"]:
+            if isinstance(step["action_input"], dict):
+                print(f"│  Input: {json.dumps(step['action_input'], indent=2)}")
+            else:
+                print(f"│  Input: {step['action_input']}")
+        if step["observation"]:
+            obs = step["observation"]
+            if len(obs) > 200:
+                obs = obs[:200] + "..."
+            print(f"│  Observation: {obs}")
+        if step["final_answer"]:
+            print(f"│  Final Answer: {step['final_answer']}")
+        print("└" + "─" * 68)
+
+    print()
+
+
+class InteractiveCLI:
+    """Interactive CLI for ToolOrchestra."""
+
+    def __init__(self, verbose: bool = False):
+        """Initialize the CLI."""
+        self.verbose = verbose
+        self.llm_client = LLMClient()
+        self.orchestrator = ToolOrchestrator(
+            llm_client=self.llm_client,
+            verbose=verbose,
+        )
+
+    def toggle_verbose(self) -> None:
+        """Toggle verbose mode."""
+        self.verbose = not self.verbose
+        self.orchestrator.verbose = self.verbose
+        print(f"\nVerbose mode: {'ON' if self.verbose else 'OFF'}\n")
+
+    def clear_history(self) -> None:
+        """Clear the orchestration history."""
+        self.orchestrator.steps = []
+        print("\nConversation history cleared.\n")
+
+    def process_query(self, query: str) -> None:
+        """Process a user query."""
+        print("\n" + "─" * 70)
+        print("Processing query...")
+        print("─" * 70 + "\n")
+
+        try:
+            result = self.orchestrator.run(query)
+            print("\n" + "═" * 70)
+            print("ANSWER")
+            print("═" * 70)
+            print(result)
+            print("═" * 70 + "\n")
+
+            # Show step count
+            step_count = len(self.orchestrator.steps)
+            print(f"(Completed in {step_count} step{'s' if step_count != 1 else ''})")
+            print("Use /trace to see the full reasoning trace.\n")
+
+        except KeyboardInterrupt:
+            print("\n\nQuery interrupted.\n")
+        except Exception as e:
+            print(f"\nError: {e}\n")
+            if self.verbose:
+                import traceback
+                traceback.print_exc()
+
+    def run(self) -> None:
+        """Run the interactive CLI loop."""
+        print_banner()
+
+        while True:
+            try:
+                # Get user input
+                user_input = input(">>> ").strip()
+
+                if not user_input:
+                    continue
+
+                # Handle commands
+                if user_input.startswith("/"):
+                    command = user_input.lower()
+
+                    if command in ("/quit", "/exit", "/q"):
+                        print("\nGoodbye!\n")
+                        break
+                    elif command in ("/help", "/h", "/?"):
+                        print_banner()
+                    elif command == "/trace":
+                        print_trace(self.orchestrator)
+                    elif command == "/tools":
+                        print_tools()
+                    elif command == "/verbose":
+                        self.toggle_verbose()
+                    elif command == "/clear":
+                        self.clear_history()
+                    else:
+                        print(f"\nUnknown command: {user_input}")
+                        print("Type /help for available commands.\n")
+                else:
+                    # Process as a query
+                    self.process_query(user_input)
+
+            except KeyboardInterrupt:
+                print("\n\nType /quit to exit.\n")
+            except EOFError:
+                print("\nGoodbye!\n")
+                break
+
+
+def main() -> None:
+    """Main entry point."""
+    parser = argparse.ArgumentParser(
+        description="ToolOrchestra Interactive CLI",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  %(prog)s                    # Start interactive mode
+  %(prog)s -v                 # Start with verbose logging
+  %(prog)s -q "What is 2+2?"  # Run a single query
+
+Available tools: web_search, python_execute, calculate,
+                 ask_gpt_oss, ask_coder, ask_nemotron_nano
+""",
+    )
+
+    parser.add_argument(
+        "-v", "--verbose",
+        action="store_true",
+        help="Enable verbose logging",
+    )
+
+    parser.add_argument(
+        "-q", "--query",
+        type=str,
+        help="Run a single query and exit",
+    )
+
+    parser.add_argument(
+        "--orchestrator-url",
+        type=str,
+        default=None,
+        help=f"Orchestrator model endpoint URL (default: from ORCHESTRATOR_BASE_URL env or {config.orchestrator.base_url})",
+    )
+
+    parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output results as JSON (for scripting)",
+    )
+
+    args = parser.parse_args()
+
+    # Setup logging
+    setup_logging(args.verbose)
+
+    # Create LLM client with custom URL if provided
+    llm_client = LLMClient(orchestrator_url=args.orchestrator_url)
+
+    if args.query:
+        # Single query mode
+        orchestrator = ToolOrchestrator(
+            llm_client=llm_client,
+            verbose=args.verbose,
+        )
+
+        result = orchestrator.run(args.query)
+
+        if args.json:
+            output = {
+                "query": args.query,
+                "answer": result,
+                "trace": orchestrator.get_trace(),
+            }
+            print(json.dumps(output, indent=2))
+        else:
+            print(result)
+    else:
+        # Interactive mode
+        cli = InteractiveCLI(verbose=args.verbose)
+        cli.llm_client = llm_client
+        cli.orchestrator.llm_client = llm_client
+        cli.run()
+
+
+if __name__ == "__main__":
+    main()

@@ -1,0 +1,21 @@
+# ToolOrchestra Python Dependencies
+# Install with: pip install -r requirements.txt
+
+# OpenAI-compatible API client
+openai>=1.40.0
+
+# HTTP requests for Ollama and SearXNG
+requests>=2.31.0
+
+# Environment configuration
+python-dotenv>=1.0.0
+
+# Type hints (Python 3.9+)
+typing-extensions>=4.8.0
+
+# Development dependencies (optional)
+pytest>=8.0.0
+pytest-asyncio>=0.23.0
+black>=24.0.0
+ruff>=0.1.0
+mypy>=1.8.0
