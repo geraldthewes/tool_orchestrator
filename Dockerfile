@@ -20,6 +20,8 @@ FROM python:3.11-slim
 #
 # SEARXNG_ENDPOINT        - URL for SearXNG web search
 #                           Default: http://localhost:8080/search
+# PYTHON_EXECUTOR_URL     - URL for remote Python executor service
+#                           Default: http://pyexec.cluster:9999/
 # PYTHON_EXECUTOR_TIMEOUT - Timeout for Python execution (seconds)
 #                           Default: 30
 #
@@ -54,9 +56,9 @@ ENV LOG_LEVEL=INFO
 # Expose port
 EXPOSE 8000
 
-# Health check
+# Health check (using Python since curl is not in slim image)
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD curl -f http://localhost:8000/health || exit 1
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')" || exit 1
 
 # Run the server
 CMD ["uvicorn", "src.api.main:app", "--host", "0.0.0.0", "--port", "8000"]

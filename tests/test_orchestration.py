@@ -127,8 +127,19 @@ class TestOrchestrator:
         assert result.success is True
         assert "50" in result.result
 
-    def test_execute_python_tool(self):
+    @patch("src.tools.python_executor.requests.post")
+    def test_execute_python_tool(self, mock_post):
         """Test executing the Python executor tool."""
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {
+            "success": True,
+            "stdout": "Hello\n",
+            "stderr": "",
+            "exit_code": 0,
+        }
+        mock_post.return_value = mock_response
+
         orchestrator = ToolOrchestrator()
 
         result = orchestrator._execute_tool(

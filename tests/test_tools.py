@@ -1,11 +1,15 @@
 """
 Tests for ToolOrchestra tools.
 
-These tests cover the local tools (math solver, python executor)
-without requiring external services.
+These tests cover the local tools (math solver) and the remote python executor
+(mocked HTTP calls) without requiring external services.
 """
 
+from unittest.mock import patch, Mock
+
 import pytest
+import requests
+
 from src.tools.math_solver import calculate, format_result_for_llm as format_math_result
 from src.tools.python_executor import execute_python, format_result_for_llm as format_python_result
 
@@ -102,43 +106,58 @@ class TestMathSolver:
 
 
 class TestPythonExecutor:
-    """Tests for the Python executor tool."""
+    """Tests for the Python executor tool (remote service)."""
 
-    def test_simple_print(self):
+    @patch("src.tools.python_executor.requests.post")
+    def test_simple_print(self, mock_post):
         """Test simple print statement."""
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {
+            "success": True,
+            "stdout": "Hello, World!\n",
+            "stderr": "",
+            "exit_code": 0,
+        }
+        mock_post.return_value = mock_response
+
         result = execute_python('print("Hello, World!")')
+
         assert result["success"] is True
         assert "Hello, World!" in result["output"]
+        mock_post.assert_called_once()
 
-    def test_arithmetic(self):
+    @patch("src.tools.python_executor.requests.post")
+    def test_arithmetic(self, mock_post):
         """Test arithmetic in Python."""
-        result = execute_python("2 + 2")
-        assert result["success"] is True
-        assert result["result"] == "4"
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {
+            "success": True,
+            "stdout": "4\n",
+            "stderr": "",
+            "exit_code": 0,
+        }
+        mock_post.return_value = mock_response
 
-    def test_variable_assignment(self):
-        """Test variable assignment and usage."""
-        code = """
-x = 10
-y = 20
-x + y
-"""
-        result = execute_python(code)
-        assert result["success"] is True
-        assert result["result"] == "30"
+        result = execute_python("print(2 + 2)")
 
-    def test_list_operations(self):
-        """Test list operations."""
-        code = """
-numbers = [1, 2, 3, 4, 5]
-sum(numbers)
-"""
-        result = execute_python(code)
         assert result["success"] is True
-        assert result["result"] == "15"
+        assert "4" in result["output"]
 
-    def test_loop(self):
+    @patch("src.tools.python_executor.requests.post")
+    def test_loop(self, mock_post):
         """Test loop execution."""
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {
+            "success": True,
+            "stdout": "10\n",
+            "stderr": "",
+            "exit_code": 0,
+        }
+        mock_post.return_value = mock_response
+
         code = """
 total = 0
 for i in range(5):
@@ -146,109 +165,158 @@ for i in range(5):
 print(total)
 """
         result = execute_python(code)
+
         assert result["success"] is True
         assert "10" in result["output"]
 
-    def test_function_definition(self):
-        """Test function definition and calling."""
-        code = """
-def factorial(n):
-    if n <= 1:
-        return 1
-    return n * factorial(n - 1)
-
-factorial(5)
-"""
-        result = execute_python(code)
-        assert result["success"] is True
-        assert result["result"] == "120"
-
-    def test_allowed_import_math(self):
-        """Test allowed import (math module)."""
-        code = """
-import math
-math.sqrt(16)
-"""
-        result = execute_python(code)
-        assert result["success"] is True
-        assert result["result"] == "4.0"
-
-    def test_allowed_import_json(self):
-        """Test allowed import (json module)."""
-        code = """
-import json
-data = {"key": "value"}
-json.dumps(data)
-"""
-        result = execute_python(code)
-        assert result["success"] is True
-        assert '"key"' in result["result"]
-
-    def test_disallowed_import(self):
-        """Test that disallowed imports are blocked."""
-        result = execute_python("import os")
-        assert result["success"] is False
-        assert "not allowed" in result["error"]
-
-    def test_disallowed_import_from(self):
-        """Test that disallowed from imports are blocked."""
-        result = execute_python("from subprocess import run")
-        assert result["success"] is False
-        assert "not allowed" in result["error"]
-
-    def test_syntax_error(self):
-        """Test handling of syntax errors."""
-        result = execute_python("def broken(")
-        assert result["success"] is False
-        assert "Syntax error" in result["error"]
-
-    def test_runtime_error(self):
+    @patch("src.tools.python_executor.requests.post")
+    def test_runtime_error(self, mock_post):
         """Test handling of runtime errors."""
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {
+            "success": False,
+            "stdout": "",
+            "stderr": "Traceback (most recent call last):\n  File \"main.py\", line 1\nZeroDivisionError: division by zero",
+            "exit_code": 1,
+        }
+        mock_post.return_value = mock_response
+
         result = execute_python("1 / 0")
+
         assert result["success"] is False
         assert "ZeroDivision" in result["error"]
 
-    def test_name_error(self):
-        """Test handling of undefined variables."""
-        result = execute_python("undefined_variable")
-        assert result["success"] is False
-        assert "NameError" in result["error"]
+    @patch("src.tools.python_executor.requests.post")
+    def test_syntax_error(self, mock_post):
+        """Test handling of syntax errors."""
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {
+            "success": False,
+            "stdout": "",
+            "stderr": "SyntaxError: unexpected EOF while parsing",
+            "exit_code": 1,
+        }
+        mock_post.return_value = mock_response
 
-    def test_format_output(self):
+        result = execute_python("def broken(")
+
+        assert result["success"] is False
+        assert "Syntax" in result["error"]
+
+    @patch("src.tools.python_executor.requests.post")
+    def test_connection_error(self, mock_post):
+        """Test handling of connection errors."""
+        mock_post.side_effect = requests.exceptions.ConnectionError("Connection refused")
+
+        result = execute_python("print('test')")
+
+        assert result["success"] is False
+        assert "connect" in result["error"].lower()
+
+    @patch("src.tools.python_executor.requests.post")
+    def test_timeout_error(self, mock_post):
+        """Test handling of timeout errors."""
+        mock_post.side_effect = requests.exceptions.Timeout()
+
+        result = execute_python("print('test')", timeout_seconds=5)
+
+        assert result["success"] is False
+        assert "timed out" in result["error"].lower()
+
+    @patch("src.tools.python_executor.requests.post")
+    def test_http_error(self, mock_post):
+        """Test handling of HTTP errors."""
+        mock_response = Mock()
+        mock_response.raise_for_status.side_effect = requests.exceptions.HTTPError(
+            "500 Server Error"
+        )
+        mock_post.return_value = mock_response
+
+        result = execute_python("print('test')")
+
+        assert result["success"] is False
+        assert "error" in result["error"].lower()
+
+    @patch("src.tools.python_executor.requests.post")
+    def test_request_payload_format(self, mock_post):
+        """Test that correct payload is sent to remote service."""
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {
+            "success": True,
+            "stdout": "",
+            "stderr": "",
+            "exit_code": 0,
+        }
+        mock_post.return_value = mock_response
+
+        code = "print('hello')"
+        execute_python(code, timeout_seconds=60)
+
+        mock_post.assert_called_once()
+        call_kwargs = mock_post.call_args
+        payload = call_kwargs.kwargs["json"]
+
+        assert payload["files"] == [{"name": "main.py", "content": code}]
+        assert payload["entrypoint"] == "main.py"
+        assert payload["timeout_seconds"] == 60
+
+    @patch("src.tools.python_executor.requests.post")
+    def test_format_output(self, mock_post):
         """Test formatting output with print."""
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {
+            "success": True,
+            "stdout": "test output\n",
+            "stderr": "",
+            "exit_code": 0,
+        }
+        mock_post.return_value = mock_response
+
         result = execute_python('print("test output")')
         formatted = format_python_result(result)
+
         assert "test output" in formatted
 
-    def test_format_result(self):
-        """Test formatting result expression."""
-        result = execute_python("42")
-        formatted = format_python_result(result)
-        assert "42" in formatted
-
-    def test_format_error(self):
+    @patch("src.tools.python_executor.requests.post")
+    def test_format_error(self, mock_post):
         """Test formatting error."""
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {
+            "success": False,
+            "stdout": "",
+            "stderr": "NameError: name 'undefined' is not defined",
+            "exit_code": 1,
+        }
+        mock_post.return_value = mock_response
+
         result = execute_python("undefined")
         formatted = format_python_result(result)
+
         assert "failed" in formatted.lower() or "error" in formatted.lower()
 
-    def test_list_comprehension(self):
-        """Test list comprehension."""
-        code = "[x**2 for x in range(5)]"
-        result = execute_python(code)
-        assert result["success"] is True
-        assert "[0, 1, 4, 9, 16]" in result["result"]
+    @patch("src.tools.python_executor.requests.post")
+    def test_stderr_appended_on_success(self, mock_post):
+        """Test that stderr is appended to output on successful execution."""
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {
+            "success": True,
+            "stdout": "result\n",
+            "stderr": "warning message",
+            "exit_code": 0,
+        }
+        mock_post.return_value = mock_response
 
-    def test_dict_operations(self):
-        """Test dictionary operations."""
-        code = """
-d = {"a": 1, "b": 2}
-d["c"] = 3
-len(d)
-"""
-        result = execute_python(code)
+        result = execute_python("print('result')")
+
         assert result["success"] is True
-        assert result["result"] == "3"
+        assert "result" in result["output"]
+        assert "warning message" in result["output"]
 
 
 class TestToolFormatters:
@@ -260,8 +328,20 @@ class TestToolFormatters:
         # Should be formatted as integer
         assert result["result"] == 15
 
-    def test_python_no_output(self):
+    @patch("src.tools.python_executor.requests.post")
+    def test_python_no_output(self, mock_post):
         """Test Python formatter with no output."""
-        result = execute_python("x = 5")  # Assignment, no print or expression
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {
+            "success": True,
+            "stdout": "",
+            "stderr": "",
+            "exit_code": 0,
+        }
+        mock_post.return_value = mock_response
+
+        result = execute_python("x = 5")  # Assignment, no print
         formatted = format_python_result(result)
+
         assert "success" in formatted.lower() or "no output" in formatted.lower()

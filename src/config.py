@@ -48,6 +48,7 @@ class DelegateLLMConfig:
 class ToolConfig:
     """Configuration for tool endpoints."""
     searxng_endpoint: str = os.getenv("SEARXNG_ENDPOINT", "http://localhost:8080/search")
+    python_executor_url: str = os.getenv("PYTHON_EXECUTOR_URL", "http://pyexec.cluster:9999/")
     python_timeout: int = int(os.getenv("PYTHON_EXECUTOR_TIMEOUT", "30"))
 
 

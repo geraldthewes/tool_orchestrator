@@ -1,167 +1,115 @@
 """
-Safe Python Code Executor
+Remote Python Code Executor
 
-Executes Python code in a restricted sandbox environment.
+Executes Python code via a remote python-executor service for secure,
+sandboxed code execution outside the container.
 """
 
 import logging
-import ast
-import sys
-from io import StringIO
-from typing import Any
+
+import requests
+
+from ..config import config
 
 logger = logging.getLogger(__name__)
-
-# Allowed built-in functions for the sandbox
-ALLOWED_BUILTINS = {
-    "abs": abs,
-    "all": all,
-    "any": any,
-    "bin": bin,
-    "bool": bool,
-    "chr": chr,
-    "dict": dict,
-    "divmod": divmod,
-    "enumerate": enumerate,
-    "filter": filter,
-    "float": float,
-    "format": format,
-    "frozenset": frozenset,
-    "getattr": getattr,
-    "hasattr": hasattr,
-    "hash": hash,
-    "hex": hex,
-    "int": int,
-    "isinstance": isinstance,
-    "issubclass": issubclass,
-    "iter": iter,
-    "len": len,
-    "list": list,
-    "map": map,
-    "max": max,
-    "min": min,
-    "next": next,
-    "oct": oct,
-    "ord": ord,
-    "pow": pow,
-    "print": print,
-    "range": range,
-    "repr": repr,
-    "reversed": reversed,
-    "round": round,
-    "set": set,
-    "slice": slice,
-    "sorted": sorted,
-    "str": str,
-    "sum": sum,
-    "tuple": tuple,
-    "type": type,
-    "zip": zip,
-}
-
-# Allowed modules
-ALLOWED_MODULES = {
-    "math",
-    "statistics",
-    "random",
-    "datetime",
-    "json",
-    "re",
-    "collections",
-    "itertools",
-    "functools",
-}
-
-
-class RestrictedImport:
-    """Restricted import that only allows safe modules."""
-
-    def __init__(self, allowed_modules: set):
-        self.allowed_modules = allowed_modules
-
-    def __call__(self, name: str, *args, **kwargs):
-        if name not in self.allowed_modules:
-            raise ImportError(f"Import of '{name}' is not allowed in sandbox")
-        return __builtins__["__import__"](name, *args, **kwargs)
 
 
 def execute_python(code: str, timeout_seconds: int = 30) -> dict:
     """
-    Execute Python code in a sandboxed environment.
+    Execute Python code via remote python-executor service.
 
     Args:
         code: Python code to execute
-        timeout_seconds: Maximum execution time (not enforced in this simple impl)
+        timeout_seconds: Maximum execution time
 
     Returns:
         Dictionary with output, errors, and return value
     """
-    # Validate code doesn't contain dangerous patterns
+    base_url = config.tools.python_executor_url.rstrip("/")
+    endpoint = f"{base_url}/api/v1/exec/sync"
+
+    payload = {
+        "files": [{"name": "main.py", "content": code}],
+        "entrypoint": "main.py",
+        "timeout_seconds": timeout_seconds,
+    }
+
     try:
-        tree = ast.parse(code)
-    except SyntaxError as e:
+        response = requests.post(
+            endpoint,
+            json=payload,
+            timeout=timeout_seconds + 5,  # Add buffer for network latency
+        )
+        response.raise_for_status()
+        data = response.json()
+
+        return _adapt_response(data)
+
+    except requests.exceptions.Timeout:
+        logger.error(f"Python executor request timed out after {timeout_seconds}s")
         return {
             "success": False,
-            "error": f"Syntax error: {e}",
+            "error": f"Execution timed out after {timeout_seconds} seconds",
+            "output": "",
+            "result": None,
+        }
+    except requests.exceptions.ConnectionError as e:
+        logger.error(f"Failed to connect to python-executor service: {e}")
+        return {
+            "success": False,
+            "error": f"Failed to connect to python-executor service: {e}",
+            "output": "",
+            "result": None,
+        }
+    except requests.exceptions.HTTPError as e:
+        logger.error(f"Python executor HTTP error: {e}")
+        return {
+            "success": False,
+            "error": f"Python executor service error: {e}",
+            "output": "",
+            "result": None,
+        }
+    except requests.exceptions.RequestException as e:
+        logger.error(f"Python executor request failed: {e}")
+        return {
+            "success": False,
+            "error": str(e),
             "output": "",
             "result": None,
         }
 
-    # Check for dangerous operations
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Import):
-            for alias in node.names:
-                if alias.name not in ALLOWED_MODULES:
-                    return {
-                        "success": False,
-                        "error": f"Import of '{alias.name}' is not allowed",
-                        "output": "",
-                        "result": None,
-                    }
-        elif isinstance(node, ast.ImportFrom):
-            if node.module and node.module.split(".")[0] not in ALLOWED_MODULES:
-                return {
-                    "success": False,
-                    "error": f"Import from '{node.module}' is not allowed",
-                    "output": "",
-                    "result": None,
-                }
 
-    # Prepare sandbox environment
-    sandbox_globals = {
-        "__builtins__": ALLOWED_BUILTINS.copy(),
-    }
-    sandbox_globals["__builtins__"]["__import__"] = RestrictedImport(ALLOWED_MODULES)
+def _adapt_response(remote_response: dict) -> dict:
+    """
+    Adapt the remote service response to the expected format.
 
-    # Capture stdout
-    old_stdout = sys.stdout
-    sys.stdout = captured_output = StringIO()
+    Remote service returns: stdout, stderr, exit_code, success
+    We need to return: success, error, output, result
+    """
+    success = remote_response.get("success", False)
+    stdout = remote_response.get("stdout", "")
+    stderr = remote_response.get("stderr", "")
+    exit_code = remote_response.get("exit_code", -1)
 
-    result = None
     error = None
+    if not success:
+        if stderr:
+            error = stderr.strip()
+        elif exit_code != 0:
+            error = f"Process exited with code {exit_code}"
+        else:
+            error = "Execution failed"
 
-    try:
-        # Execute the code
-        exec(code, sandbox_globals)
-
-        # Try to get a result if there's an expression at the end
-        if tree.body and isinstance(tree.body[-1], ast.Expr):
-            result = eval(compile(ast.Expression(tree.body[-1].value), "<string>", "eval"), sandbox_globals)
-
-    except Exception as e:
-        error = f"{type(e).__name__}: {e}"
-        logger.error(f"Code execution failed: {error}")
-
-    finally:
-        sys.stdout = old_stdout
-
-    output = captured_output.getvalue()
+    output = stdout
+    if success and stderr:
+        # Append stderr as informational if execution succeeded
+        output = f"{stdout}\n[stderr: {stderr}]" if stdout else f"[stderr: {stderr}]"
 
     return {
-        "success": error is None,
+        "success": success,
         "error": error,
         "output": output,
-        "result": str(result) if result is not None else None,
+        "result": None,  # Remote executor doesn't extract last expression
     }
 
 
