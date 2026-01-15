@@ -5,7 +5,10 @@ Executes Python code via a remote python-executor service for secure,
 sandboxed code execution outside the container.
 """
 
+import io
+import json
 import logging
+import tarfile
 
 import requests
 
@@ -28,16 +31,31 @@ def execute_python(code: str, timeout_seconds: int = 30) -> dict:
     base_url = config.tools.python_executor_url.rstrip("/")
     endpoint = f"{base_url}/api/v1/exec/sync"
 
-    payload = {
-        "files": [{"name": "main.py", "content": code}],
+    # Create tar archive with code
+    tar_buffer = io.BytesIO()
+    with tarfile.open(fileobj=tar_buffer, mode="w") as tar:
+        code_bytes = code.encode("utf-8")
+        tarinfo = tarfile.TarInfo(name="main.py")
+        tarinfo.size = len(code_bytes)
+        tar.addfile(tarinfo, io.BytesIO(code_bytes))
+    tar_buffer.seek(0)
+
+    # Build metadata
+    metadata = {
         "entrypoint": "main.py",
-        "timeout_seconds": timeout_seconds,
+        "config": {"timeout_seconds": timeout_seconds},
+    }
+
+    # Send multipart/form-data
+    files = {
+        "tar": ("code.tar", tar_buffer, "application/octet-stream"),
+        "metadata": (None, json.dumps(metadata), "application/json"),
     }
 
     try:
         response = requests.post(
             endpoint,
-            json=payload,
+            files=files,
             timeout=timeout_seconds + 5,  # Add buffer for network latency
         )
         response.raise_for_status()
@@ -83,22 +101,26 @@ def _adapt_response(remote_response: dict) -> dict:
     """
     Adapt the remote service response to the expected format.
 
-    Remote service returns: stdout, stderr, exit_code, success
+    Remote service returns: status, stdout, stderr, exit_code, error
     We need to return: success, error, output, result
     """
-    success = remote_response.get("success", False)
+    status = remote_response.get("status", "failed")
+    success = status == "completed"
     stdout = remote_response.get("stdout", "")
     stderr = remote_response.get("stderr", "")
     exit_code = remote_response.get("exit_code", -1)
+    error_msg = remote_response.get("error", "")
 
     error = None
     if not success:
-        if stderr:
+        if error_msg:
+            error = error_msg
+        elif stderr:
             error = stderr.strip()
         elif exit_code != 0:
             error = f"Process exited with code {exit_code}"
         else:
-            error = "Execution failed"
+            error = f"Execution {status}"
 
     output = stdout
     if success and stderr:

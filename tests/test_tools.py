@@ -114,7 +114,7 @@ class TestPythonExecutor:
         mock_response = Mock()
         mock_response.status_code = 200
         mock_response.json.return_value = {
-            "success": True,
+            "status": "completed",
             "stdout": "Hello, World!\n",
             "stderr": "",
             "exit_code": 0,
@@ -133,7 +133,7 @@ class TestPythonExecutor:
         mock_response = Mock()
         mock_response.status_code = 200
         mock_response.json.return_value = {
-            "success": True,
+            "status": "completed",
             "stdout": "4\n",
             "stderr": "",
             "exit_code": 0,
@@ -151,7 +151,7 @@ class TestPythonExecutor:
         mock_response = Mock()
         mock_response.status_code = 200
         mock_response.json.return_value = {
-            "success": True,
+            "status": "completed",
             "stdout": "10\n",
             "stderr": "",
             "exit_code": 0,
@@ -175,7 +175,7 @@ print(total)
         mock_response = Mock()
         mock_response.status_code = 200
         mock_response.json.return_value = {
-            "success": False,
+            "status": "failed",
             "stdout": "",
             "stderr": "Traceback (most recent call last):\n  File \"main.py\", line 1\nZeroDivisionError: division by zero",
             "exit_code": 1,
@@ -193,7 +193,7 @@ print(total)
         mock_response = Mock()
         mock_response.status_code = 200
         mock_response.json.return_value = {
-            "success": False,
+            "status": "failed",
             "stdout": "",
             "stderr": "SyntaxError: unexpected EOF while parsing",
             "exit_code": 1,
@@ -241,11 +241,14 @@ print(total)
 
     @patch("src.tools.python_executor.requests.post")
     def test_request_payload_format(self, mock_post):
-        """Test that correct payload is sent to remote service."""
+        """Test that correct multipart payload is sent to remote service."""
+        import json
+        import tarfile
+
         mock_response = Mock()
         mock_response.status_code = 200
         mock_response.json.return_value = {
-            "success": True,
+            "status": "completed",
             "stdout": "",
             "stderr": "",
             "exit_code": 0,
@@ -257,11 +260,35 @@ print(total)
 
         mock_post.assert_called_once()
         call_kwargs = mock_post.call_args
-        payload = call_kwargs.kwargs["json"]
 
-        assert payload["files"] == [{"name": "main.py", "content": code}]
-        assert payload["entrypoint"] == "main.py"
-        assert payload["timeout_seconds"] == 60
+        # Verify multipart/form-data format (uses 'files' parameter, not 'json')
+        assert "files" in call_kwargs.kwargs
+        assert "json" not in call_kwargs.kwargs
+
+        files_param = call_kwargs.kwargs["files"]
+
+        # Verify tar field
+        assert "tar" in files_param
+        tar_tuple = files_param["tar"]
+        assert tar_tuple[0] == "code.tar"
+        assert tar_tuple[2] == "application/octet-stream"
+
+        # Verify tar content contains main.py with the code
+        tar_buffer = tar_tuple[1]
+        tar_buffer.seek(0)
+        with tarfile.open(fileobj=tar_buffer, mode="r") as tar:
+            members = tar.getnames()
+            assert "main.py" in members
+            main_py = tar.extractfile("main.py")
+            assert main_py.read().decode("utf-8") == code
+
+        # Verify metadata field
+        assert "metadata" in files_param
+        metadata_tuple = files_param["metadata"]
+        assert metadata_tuple[2] == "application/json"
+        metadata = json.loads(metadata_tuple[1])
+        assert metadata["entrypoint"] == "main.py"
+        assert metadata["config"]["timeout_seconds"] == 60
 
     @patch("src.tools.python_executor.requests.post")
     def test_format_output(self, mock_post):
@@ -269,7 +296,7 @@ print(total)
         mock_response = Mock()
         mock_response.status_code = 200
         mock_response.json.return_value = {
-            "success": True,
+            "status": "completed",
             "stdout": "test output\n",
             "stderr": "",
             "exit_code": 0,
@@ -287,7 +314,7 @@ print(total)
         mock_response = Mock()
         mock_response.status_code = 200
         mock_response.json.return_value = {
-            "success": False,
+            "status": "failed",
             "stdout": "",
             "stderr": "NameError: name 'undefined' is not defined",
             "exit_code": 1,
@@ -305,7 +332,7 @@ print(total)
         mock_response = Mock()
         mock_response.status_code = 200
         mock_response.json.return_value = {
-            "success": True,
+            "status": "completed",
             "stdout": "result\n",
             "stderr": "warning message",
             "exit_code": 0,
@@ -334,7 +361,7 @@ class TestToolFormatters:
         mock_response = Mock()
         mock_response.status_code = 200
         mock_response.json.return_value = {
-            "success": True,
+            "status": "completed",
             "stdout": "",
             "stderr": "",
             "exit_code": 0,
