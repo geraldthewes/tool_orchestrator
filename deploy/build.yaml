@@ -11,7 +11,8 @@ test:
   entry_point: false
   gpu_required: false
   python_cwd: "."
-  python_command: "python-executor run --requirements requirements.txt --file -m pytest tests/ -v"
+  python_command: "echo http://$SERVICE_HOST:$SERVICE_PORT > /tmp/service_url.txt && python-executor run --network --file /tmp/service_url.txt tests/integration/test_smoke.py"
+  container_port: 8000
 
 resource_limits:
   build:
