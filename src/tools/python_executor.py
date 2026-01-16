@@ -5,10 +5,7 @@ Executes Python code via a remote python-executor service for secure,
 sandboxed code execution outside the container.
 """
 
-import io
-import json
 import logging
-import tarfile
 
 import requests
 
@@ -29,33 +26,14 @@ def execute_python(code: str, timeout_seconds: int = 30) -> dict:
         Dictionary with output, errors, and return value
     """
     base_url = config.tools.python_executor_url.rstrip("/")
-    endpoint = f"{base_url}/api/v1/exec/sync"
+    endpoint = f"{base_url}/api/v1/eval"
 
-    # Create tar archive with code
-    tar_buffer = io.BytesIO()
-    with tarfile.open(fileobj=tar_buffer, mode="w") as tar:
-        code_bytes = code.encode("utf-8")
-        tarinfo = tarfile.TarInfo(name="main.py")
-        tarinfo.size = len(code_bytes)
-        tar.addfile(tarinfo, io.BytesIO(code_bytes))
-    tar_buffer.seek(0)
-
-    # Build metadata
-    metadata = {
-        "entrypoint": "main.py",
-        "config": {"timeout_seconds": timeout_seconds},
-    }
-
-    # Send multipart/form-data
-    files = {
-        "tar": ("code.tar", tar_buffer, "application/octet-stream"),
-        "metadata": (None, json.dumps(metadata), "application/json"),
-    }
+    payload = {"code": code}
 
     try:
         response = requests.post(
             endpoint,
-            files=files,
+            json=payload,
             timeout=timeout_seconds + 5,  # Add buffer for network latency
         )
         response.raise_for_status()

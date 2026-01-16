@@ -133,7 +133,7 @@ class TestOrchestrator:
         mock_response = Mock()
         mock_response.status_code = 200
         mock_response.json.return_value = {
-            "success": True,
+            "status": "completed",
             "stdout": "Hello\n",
             "stderr": "",
             "exit_code": 0,

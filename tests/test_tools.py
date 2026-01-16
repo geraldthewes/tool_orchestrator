@@ -7,7 +7,6 @@ These tests cover the local tools (math solver) and the remote python executor
 
 from unittest.mock import patch, Mock
 
-import pytest
 import requests
 
 from src.tools.math_solver import calculate, format_result_for_llm as format_math_result
@@ -241,10 +240,7 @@ print(total)
 
     @patch("src.tools.python_executor.requests.post")
     def test_request_payload_format(self, mock_post):
-        """Test that correct multipart payload is sent to remote service."""
-        import json
-        import tarfile
-
+        """Test that correct JSON payload is sent to remote service."""
         mock_response = Mock()
         mock_response.status_code = 200
         mock_response.json.return_value = {
@@ -261,34 +257,17 @@ print(total)
         mock_post.assert_called_once()
         call_kwargs = mock_post.call_args
 
-        # Verify multipart/form-data format (uses 'files' parameter, not 'json')
-        assert "files" in call_kwargs.kwargs
-        assert "json" not in call_kwargs.kwargs
+        # Verify JSON format (uses 'json' parameter, not 'files')
+        assert "json" in call_kwargs.kwargs
+        assert "files" not in call_kwargs.kwargs
 
-        files_param = call_kwargs.kwargs["files"]
+        json_payload = call_kwargs.kwargs["json"]
+        assert json_payload == {"code": code}
 
-        # Verify tar field
-        assert "tar" in files_param
-        tar_tuple = files_param["tar"]
-        assert tar_tuple[0] == "code.tar"
-        assert tar_tuple[2] == "application/octet-stream"
-
-        # Verify tar content contains main.py with the code
-        tar_buffer = tar_tuple[1]
-        tar_buffer.seek(0)
-        with tarfile.open(fileobj=tar_buffer, mode="r") as tar:
-            members = tar.getnames()
-            assert "main.py" in members
-            main_py = tar.extractfile("main.py")
-            assert main_py.read().decode("utf-8") == code
-
-        # Verify metadata field
-        assert "metadata" in files_param
-        metadata_tuple = files_param["metadata"]
-        assert metadata_tuple[2] == "application/json"
-        metadata = json.loads(metadata_tuple[1])
-        assert metadata["entrypoint"] == "main.py"
-        assert metadata["config"]["timeout_seconds"] == 60
+        # Verify endpoint URL uses /api/v1/eval
+        call_args = mock_post.call_args
+        endpoint_url = call_args.args[0] if call_args.args else call_kwargs.kwargs.get("url", "")
+        assert "/api/v1/eval" in endpoint_url
 
     @patch("src.tools.python_executor.requests.post")
     def test_format_output(self, mock_post):
