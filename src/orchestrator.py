@@ -91,6 +91,7 @@ class ToolOrchestrator:
         max_steps: int = 10,
         verbose: bool = False,
         delegates_config: Optional[DelegatesConfiguration] = None,
+        execution_id: Optional[str] = None,
     ):
         """
         Initialize the orchestrator.
@@ -100,10 +101,12 @@ class ToolOrchestrator:
             max_steps: Maximum number of reasoning steps
             verbose: Enable verbose logging
             delegates_config: Configuration for delegate LLMs (loaded from YAML if not provided)
+            execution_id: Optional ID for correlating logs across the orchestration
         """
         self.llm_client = llm_client or LLMClient()
         self.max_steps = max_steps
         self.verbose = verbose
+        self.execution_id = execution_id
         self.steps: list[OrchestrationStep] = []
 
         # Load delegates configuration
@@ -347,15 +350,16 @@ class ToolOrchestrator:
 
     def _log_trace_summary(self) -> None:
         """Log a compact trace summary."""
-        logger.info("─" * 50)
-        logger.info("TRACE SUMMARY")
-        logger.info("─" * 50)
+        id_prefix = f"[{self.execution_id}] " if self.execution_id else ""
+        logger.info(f"{id_prefix}{'─' * 50}")
+        logger.info(f"{id_prefix}TRACE SUMMARY")
+        logger.info(f"{id_prefix}{'─' * 50}")
         for step in self.steps:
             if step.is_final:
-                logger.info(f"Step {step.step_number} [FINAL]: {step.action}")
+                logger.info(f"{id_prefix}Step {step.step_number} [FINAL]: {step.action}")
             else:
                 obs_preview = (step.observation[:80] + "...") if step.observation and len(step.observation) > 80 else step.observation
-                logger.info(f"Step {step.step_number}: {step.action} -> {obs_preview}")
+                logger.info(f"{id_prefix}Step {step.step_number}: {step.action} -> {obs_preview}")
 
     def _build_messages(self, query: str) -> list[dict]:
         """
@@ -455,7 +459,13 @@ class ToolOrchestrator:
             self.steps.append(step)
 
         # Max steps reached without final answer
-        logger.warning(f"Max steps ({self.max_steps}) reached without final answer")
+        id_prefix = f"[{self.execution_id}] " if self.execution_id else ""
+        query_preview = query[:100] + "..." if len(query) > 100 else query
+        logger.warning(
+            f"{id_prefix}Max steps ({self.max_steps}) reached without final answer. "
+            f"Query: {query_preview}"
+        )
+        self._log_trace_summary()
         return "I was unable to complete the task within the allowed number of steps. Here's what I found so far:\n\n" + "\n".join(
             f"Step {s.step_number}: {s.reasoning}" for s in self.steps if s.reasoning
         )

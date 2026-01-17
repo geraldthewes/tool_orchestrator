@@ -157,8 +157,9 @@ def create_chat_completion(
 
     # Extract text content (handles both string and list formats)
     query = user_messages[-1].get_text_content()
-    logger.info(f"Processing chat completion request: {query[:100]}...")
-    logger.debug(f"Full query: {query}")
+    execution_id = f"exec-{uuid.uuid4().hex[:8]}"
+    logger.info(f"[{execution_id}] Processing chat completion request: {query[:100]}...")
+    logger.debug(f"[{execution_id}] Full query: {query}")
 
     try:
         # Create orchestrator and run query
@@ -168,10 +169,11 @@ def create_chat_completion(
         orchestrator = ToolOrchestrator(
             llm_client=llm_client,
             verbose=verbose,
+            execution_id=execution_id,
         )
 
         answer = orchestrator.run(query)
-        logger.debug(f"Orchestrator response: {answer[:200]}...")
+        logger.debug(f"[{execution_id}] Orchestrator response: {answer[:200]}...")
 
         # Return streaming response if requested
         if request.stream:
@@ -220,7 +222,7 @@ def create_chat_completion(
         )
 
     except Exception as e:
-        logger.exception(f"Chat completion failed: {e}")
+        logger.exception(f"[{execution_id}] Chat completion failed: {e}")
         raise HTTPException(
             status_code=500,
             detail=str(e),

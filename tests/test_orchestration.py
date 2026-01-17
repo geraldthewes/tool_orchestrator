@@ -73,6 +73,16 @@ class TestOrchestrator:
         assert orchestrator.verbose is True
         assert len(orchestrator.steps) == 0
 
+    def test_initialization_with_execution_id(self):
+        """Test orchestrator initialization with execution_id."""
+        orchestrator = ToolOrchestrator(execution_id="exec-test123")
+        assert orchestrator.execution_id == "exec-test123"
+
+    def test_initialization_without_execution_id(self):
+        """Test orchestrator initialization without execution_id defaults to None."""
+        orchestrator = ToolOrchestrator()
+        assert orchestrator.execution_id is None
+
     def test_parse_thought_action_input(self):
         """Test parsing a standard response."""
         orchestrator = ToolOrchestrator()
@@ -303,6 +313,118 @@ class TestOrchestrator:
 
         assert len(orchestrator.steps) == 3
         assert "unable to complete" in result.lower()
+
+    @patch("src.orchestrator.LLMClient")
+    def test_run_max_steps_logs_execution_id_and_query(self, mock_llm_class, caplog):
+        """Test max steps warning includes execution_id and query preview."""
+        import logging
+
+        mock_client = Mock()
+        mock_llm_class.return_value = mock_client
+
+        mock_client.call_orchestrator.return_value = {
+            "success": True,
+            "response": """
+**Thought**: Keep calculating.
+**Action**: calculate
+**Action Input**: {"expression": "1 + 1"}
+""",
+        }
+
+        orchestrator = ToolOrchestrator(
+            llm_client=mock_client,
+            max_steps=2,
+            execution_id="exec-abc123",
+        )
+
+        with caplog.at_level(logging.WARNING):
+            orchestrator.run("Test query for logging")
+
+        # Check warning message includes execution_id and query
+        warning_messages = [r.message for r in caplog.records if r.levelno == logging.WARNING]
+        assert len(warning_messages) >= 1
+        assert "[exec-abc123]" in warning_messages[0]
+        assert "Test query for logging" in warning_messages[0]
+
+    @patch("src.orchestrator.LLMClient")
+    def test_run_max_steps_logs_truncated_query(self, mock_llm_class, caplog):
+        """Test max steps warning truncates long queries."""
+        import logging
+
+        mock_client = Mock()
+        mock_llm_class.return_value = mock_client
+
+        mock_client.call_orchestrator.return_value = {
+            "success": True,
+            "response": """
+**Thought**: Keep calculating.
+**Action**: calculate
+**Action Input**: {"expression": "1 + 1"}
+""",
+        }
+
+        long_query = "A" * 150  # Query longer than 100 chars
+        orchestrator = ToolOrchestrator(
+            llm_client=mock_client,
+            max_steps=1,
+            execution_id="exec-xyz789",
+        )
+
+        with caplog.at_level(logging.WARNING):
+            orchestrator.run(long_query)
+
+        warning_messages = [r.message for r in caplog.records if r.levelno == logging.WARNING]
+        assert len(warning_messages) >= 1
+        # Should be truncated with ...
+        assert "..." in warning_messages[0]
+        # Should contain the first 100 chars
+        assert "A" * 100 in warning_messages[0]
+
+    def test_log_trace_summary_includes_execution_id(self, caplog):
+        """Test trace summary logs include execution_id prefix."""
+        import logging
+
+        orchestrator = ToolOrchestrator(execution_id="exec-trace123")
+        orchestrator.steps = [
+            OrchestrationStep(
+                step_number=1,
+                reasoning="First step",
+                action="calculate",
+                action_input={"expression": "1 + 1"},
+                observation="1 + 1 = 2",
+            ),
+        ]
+
+        with caplog.at_level(logging.INFO):
+            orchestrator._log_trace_summary()
+
+        info_messages = [r.message for r in caplog.records if r.levelno == logging.INFO]
+        # All trace summary lines should have the execution_id prefix
+        for msg in info_messages:
+            assert "[exec-trace123]" in msg
+
+    def test_log_trace_summary_without_execution_id(self, caplog):
+        """Test trace summary works without execution_id."""
+        import logging
+
+        orchestrator = ToolOrchestrator()
+        orchestrator.steps = [
+            OrchestrationStep(
+                step_number=1,
+                reasoning="First step",
+                action="calculate",
+                action_input={"expression": "1 + 1"},
+                observation="1 + 1 = 2",
+            ),
+        ]
+
+        with caplog.at_level(logging.INFO):
+            orchestrator._log_trace_summary()
+
+        info_messages = [r.message for r in caplog.records if r.levelno == logging.INFO]
+        # Should have log messages but no execution_id prefix
+        assert len(info_messages) >= 1
+        assert "TRACE SUMMARY" in " ".join(info_messages)
 
     @patch("src.orchestrator.LLMClient")
     def test_run_llm_error(self, mock_llm_class):
