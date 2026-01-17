@@ -117,8 +117,14 @@ class TestChatCompletionsEndpoint:
         )
         assert response.status_code == 400
 
-    def test_chat_completion_streaming_not_supported(self):
-        """Chat completion with stream=true should return 400."""
+    @patch("src.api.routes.chat.ToolOrchestrator")
+    @patch("src.api.routes.chat.LLMClient")
+    def test_chat_completion_streaming(self, mock_llm_client, mock_orchestrator_class):
+        """Chat completion with stream=true should return SSE response."""
+        mock_instance = Mock()
+        mock_instance.run.return_value = "Streamed response"
+        mock_orchestrator_class.return_value = mock_instance
+
         response = client.post(
             "/v1/chat/completions",
             json={
@@ -127,7 +133,24 @@ class TestChatCompletionsEndpoint:
                 "stream": True,
             },
         )
-        assert response.status_code == 400
+
+        assert response.status_code == 200
+        assert response.headers["content-type"] == "text/event-stream; charset=utf-8"
+
+        # Parse SSE chunks
+        content = response.text
+        lines = [line for line in content.split("\n") if line.startswith("data: ")]
+
+        # Should have content chunk, finish chunk, and [DONE]
+        assert len(lines) == 3
+        assert lines[2] == "data: [DONE]"
+
+        # Verify first chunk contains the response
+        import json
+        chunk = json.loads(lines[0].replace("data: ", ""))
+        assert chunk["object"] == "chat.completion.chunk"
+        assert chunk["model"] == "tool-orchestrator"
+        assert chunk["choices"][0]["delta"]["content"] == "Streamed response"
 
     @patch("src.api.routes.chat.ToolOrchestrator")
     @patch("src.api.routes.chat.LLMClient")

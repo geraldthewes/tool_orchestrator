@@ -36,8 +36,8 @@ class DelegateLLMConfig:
     delegates_config_path: str = os.getenv("DELEGATES_CONFIG_PATH", "")
 
     # Legacy settings (kept for backward compatibility with llm_delegate.py functions)
-    reasoning_llm_url: str = os.getenv("REASONING_LLM_BASE_URL", "http://localhost:30000/v1")
-    reasoning_llm_model: str = os.getenv("REASONING_LLM_MODEL", "openai/gpt-oss-120b")
+    reasoning_llm_url: str = os.getenv("REASONING_LLM_BASE_URL", "http://gx10-d8ce.cluster:8000/v1")
+    reasoning_llm_model: str = os.getenv("REASONING_LLM_MODEL", "glm-reap")
     coding_llm_url: str = os.getenv("CODING_LLM_BASE_URL", "http://localhost:8000/v1")
     coding_llm_model: str = os.getenv("CODING_LLM_MODEL", "qwen3-coder")
     fast_llm_url: str = os.getenv("FAST_LLM_URL", "http://localhost:11434/api/chat")

@@ -10,6 +10,9 @@ Usage:
 
     # Production server
     uvicorn src.api.main:app --host 0.0.0.0 --port 8000 --workers 4
+
+    # Debug mode (verbose logging)
+    LOG_LEVEL=DEBUG uvicorn src.api.main:app --reload --host 0.0.0.0 --port 8000
 """
 
 import logging
@@ -18,8 +21,23 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from ..config import config
 from .routes import health, chat
 
+
+def configure_logging():
+    """Configure logging based on LOG_LEVEL environment variable."""
+    log_level = getattr(logging, config.log_level.upper(), logging.INFO)
+    logging.basicConfig(
+        level=log_level,
+        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+    )
+    # Set level for our modules
+    logging.getLogger("src").setLevel(log_level)
+
+
+configure_logging()
 logger = logging.getLogger(__name__)
 
 
@@ -80,7 +98,6 @@ def run_server():
     This is the entry point for running the server programmatically.
     """
     import uvicorn
-    from ..config import config
 
     uvicorn.run(
         "src.api.main:app",
