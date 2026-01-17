@@ -11,7 +11,9 @@ job "tool-orchestrator" {
     }
 
     network {
-      port "http" {}
+      port "http" {
+        to = 8000
+      }
     }
 
     task "tool-orchestrator" {
@@ -23,8 +25,7 @@ job "tool-orchestrator" {
       }
 
       env {
-        # Server binds to dynamic Nomad port
-        SERVER_PORT = "${NOMAD_PORT_http}"
+        # Server configuration (port 8000 mapped via Nomad network)
         SERVER_HOST = "0.0.0.0"
 
         # Orchestrator LLM
