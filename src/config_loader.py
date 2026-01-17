@@ -125,7 +125,7 @@ def load_delegates_config(path: Optional[str] = None) -> DelegatesConfiguration:
         logger.warning(f"Delegates config not found at {config_path}, using empty config")
         return DelegatesConfiguration(version="1.0", delegates={})
 
-    logger.info(f"Loading delegates config from {config_path}")
+    logger.debug(f"Loading delegates config from {config_path}")
 
     with open(config_path, "r") as f:
         raw_config = yaml.safe_load(f)

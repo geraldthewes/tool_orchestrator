@@ -345,6 +345,18 @@ class ToolOrchestrator:
                 result=f"Tool execution error: {e}",
             )
 
+    def _log_trace_summary(self) -> None:
+        """Log a compact trace summary."""
+        logger.info("─" * 50)
+        logger.info("TRACE SUMMARY")
+        logger.info("─" * 50)
+        for step in self.steps:
+            if step.is_final:
+                logger.info(f"Step {step.step_number} [FINAL]: {step.action}")
+            else:
+                obs_preview = (step.observation[:80] + "...") if step.observation and len(step.observation) > 80 else step.observation
+                logger.info(f"Step {step.step_number}: {step.action} -> {obs_preview}")
+
     def _build_messages(self, query: str) -> list[dict]:
         """
         Build the message history for the LLM.
@@ -396,7 +408,7 @@ class ToolOrchestrator:
             The final answer string
         """
         self.steps = []
-        logger.info(f"Starting orchestration for: {query}")
+        logger.debug(f"Starting orchestration for: {query}")
 
         for i in range(self.max_steps):
             # Build messages and call the orchestrator model
@@ -427,11 +439,13 @@ class ToolOrchestrator:
             # Check if we have a final answer
             if step.is_final:
                 self.steps.append(step)
-                logger.info(f"Final answer reached after {len(self.steps)} steps")
+                logger.info(f"Completed in {len(self.steps)} steps")
+                self._log_trace_summary()
                 return step.final_answer or "No answer provided"
 
             # Execute the tool
             if step.action and step.action_input:
+                logger.info(f"Tool: {step.action}({json.dumps(step.action_input)})")
                 tool_result = self._execute_tool(step.action, step.action_input)
                 step.observation = tool_result.result
 
