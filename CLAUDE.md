@@ -45,7 +45,8 @@ For full deployment guidance, see the [Cluster Deployment Guide](https://cluster
 
 ```bash
 make build    # Push code and build Docker image
-make deploy   # Deploy to Nomad cluster
+make deploy   # Deploy to Nomad cluster and restart to pull new image
+make restart  # Restart running allocations to pull new image
 make status   # Check deployment status
 ```
 
@@ -58,6 +59,9 @@ jobforge submit-job --image-tags "latest" --watch --history deploy/build.yaml
 
 # Deploy to Nomad cluster
 nomad job run deploy/tool-orchestrator.nomad
+
+# Restart allocations to pull new image (required when job spec unchanged)
+nomad job restart -on-error=fail tool-orchestrator
 
 # Check deployment status
 nomad job status tool-orchestrator

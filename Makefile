@@ -1,6 +1,6 @@
 # ToolOrchestra Makefile
 
-.PHONY: help install setup test lint format clean interactive query check-endpoint server server-dev build deploy status
+.PHONY: help install setup test lint format clean interactive query check-endpoint server server-dev build deploy restart status
 
 help:
 	@echo "ToolOrchestra Commands:"
@@ -26,7 +26,8 @@ help:
 	@echo ""
 	@echo "Build and Deploy:"
 	@echo "  make build         - Push code and build Docker image"
-	@echo "  make deploy        - Deploy to Nomad cluster"
+	@echo "  make deploy        - Deploy to Nomad cluster and restart to pull new image"
+	@echo "  make restart       - Restart running allocations to pull new image"
 	@echo "  make status        - Check deployment status"
 	@echo ""
 
@@ -86,6 +87,11 @@ build:
 
 deploy:
 	nomad job run deploy/tool-orchestrator.nomad
+	@echo "Restarting allocations to pull new image..."
+	nomad job restart -on-error=fail tool-orchestrator
+
+restart:
+	nomad job restart -on-error=fail tool-orchestrator
 
 status:
 	nomad job status tool-orchestrator
