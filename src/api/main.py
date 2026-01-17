@@ -18,8 +18,10 @@ Usage:
 import logging
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from ..config import config
 from .routes import health, chat
@@ -83,6 +85,22 @@ def create_app() -> FastAPI:
     # Include routers
     app.include_router(health.router, tags=["Health"])
     app.include_router(chat.router, tags=["Chat"])
+
+    @app.exception_handler(RequestValidationError)
+    async def validation_exception_handler(
+        request: Request, exc: RequestValidationError
+    ) -> JSONResponse:
+        """Log validation errors before returning 400 response."""
+        logger.warning(
+            f"Validation error on {request.method} {request.url.path}: {exc.errors()}"
+        )
+        # Log request body for debugging (truncated to avoid log spam)
+        body = await request.body()
+        logger.debug(f"Request body: {body.decode('utf-8', errors='replace')[:1000]}")
+        return JSONResponse(
+            status_code=400,
+            content={"detail": exc.errors()},
+        )
 
     return app
 

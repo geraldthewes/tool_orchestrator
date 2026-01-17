@@ -96,7 +96,7 @@ class TestChatCompletionsEndpoint:
         assert "usage" in data
 
     def test_chat_completion_empty_messages(self):
-        """Chat completion with empty messages should return 422."""
+        """Chat completion with empty messages should return 400."""
         response = client.post(
             "/v1/chat/completions",
             json={
@@ -104,7 +104,7 @@ class TestChatCompletionsEndpoint:
                 "messages": [],
             },
         )
-        assert response.status_code == 422
+        assert response.status_code == 400
 
     def test_chat_completion_no_user_message(self):
         """Chat completion without user message should return 400."""
