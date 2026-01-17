@@ -1,6 +1,6 @@
 # ToolOrchestra Makefile
 
-.PHONY: help install setup test lint format clean interactive query check-endpoint server server-dev
+.PHONY: help install setup test lint format clean interactive query check-endpoint server server-dev build deploy status
 
 help:
 	@echo "ToolOrchestra Commands:"
@@ -23,6 +23,11 @@ help:
 	@echo "API Server:"
 	@echo "  make server        - Start API server"
 	@echo "  make server-dev    - Start API server with auto-reload"
+	@echo ""
+	@echo "Build and Deploy:"
+	@echo "  make build         - Push code and build Docker image"
+	@echo "  make deploy        - Deploy to Nomad cluster"
+	@echo "  make status        - Check deployment status"
 	@echo ""
 
 # Setup
@@ -73,3 +78,14 @@ server:
 
 server-dev:
 	uvicorn src.api.main:app --reload --host 0.0.0.0 --port 8000
+
+# Build and Deploy
+build:
+	git push origin
+	jobforge submit-job --image-tags "latest" --watch --history deploy/build.yaml
+
+deploy:
+	nomad job run deploy/tool-orchestrator.nomad
+
+status:
+	nomad job status tool-orchestrator

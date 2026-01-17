@@ -39,9 +39,22 @@ uvicorn src.api.main:app --reload --host 0.0.0.0 --port 8000  # dev mode
 
 Uses JobForge for CI/CD. Configuration is in `deploy/build.yaml`.
 
+For full deployment guidance, see the [Cluster Deployment Guide](https://cluster-docs-https.service.consul:8444/services/DEPLOYMENT-GUIDE.md).
+
+**Preferred: Use Makefile targets**
+
+```bash
+make build    # Push code and build Docker image
+make deploy   # Deploy to Nomad cluster
+make status   # Check deployment status
+```
+
+**Manual commands (if needed)**
+
 ```bash
 # Build and push Docker image (requires changes pushed to main branch)
-jobforge submit-job deploy/build.yaml -w
+git push origin
+jobforge submit-job --image-tags "latest" --watch --history deploy/build.yaml
 
 # Deploy to Nomad cluster
 nomad job run deploy/tool-orchestrator.nomad
