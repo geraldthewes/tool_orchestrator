@@ -40,7 +40,7 @@ class DelegateLLMConfig:
     reasoning_llm_model: str = os.getenv("REASONING_LLM_MODEL", "glm-reap")
     coding_llm_url: str = os.getenv("CODING_LLM_BASE_URL", "http://localhost:8000/v1")
     coding_llm_model: str = os.getenv("CODING_LLM_MODEL", "qwen3-coder")
-    fast_llm_url: str = os.getenv("FAST_LLM_URL", "http://localhost:11434/api/chat")
+    fast_llm_url: str = os.getenv("FAST_LLM_URL", "http://localhost:11434/v1")
     fast_llm_model: str = os.getenv("FAST_LLM_MODEL", "nemotron-3-nano")
 
 

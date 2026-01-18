@@ -6,7 +6,6 @@ Supports both OpenAI-compatible endpoints and Ollama.
 """
 
 import logging
-from typing import Optional
 from openai import OpenAI
 import requests
 
@@ -211,7 +210,7 @@ def call_fast_llm(
     temperature: float = 0.7,
 ) -> dict:
     """
-    Call the fast LLM for quick reasoning tasks (Ollama endpoint).
+    Call the fast LLM for quick reasoning tasks.
 
     Args:
         prompt: The task or question
@@ -221,22 +220,17 @@ def call_fast_llm(
         Dictionary with response or error
     """
     try:
-        response = requests.post(
-            config.delegates.fast_llm_url,
-            json={
-                "model": config.delegates.fast_llm_model,
-                "messages": [{"role": "user", "content": prompt}],
-                "stream": False,
-                "options": {"temperature": temperature},
-            },
-            timeout=120,
+        client = OpenAI(base_url=config.delegates.fast_llm_url, api_key="dummy")
+        response = client.chat.completions.create(
+            model=config.delegates.fast_llm_model,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=temperature,
+            max_tokens=1024,
         )
-        response.raise_for_status()
-        data = response.json()
         return {
             "success": True,
             "model": "fast-llm",
-            "response": data["message"]["content"],
+            "response": response.choices[0].message.content,
             "error": None,
         }
     except Exception as e:

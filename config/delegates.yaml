@@ -49,8 +49,8 @@ delegates:
   fast:
     display_name: "Fast Responder"
     connection:
-      type: "ollama"
-      base_url: "${FAST_LLM_URL:-http://localhost:11434/api/chat}"
+      type: "openai_compatible"
+      base_url: "${FAST_LLM_URL:-http://localhost:11434/v1}"
       model: "${FAST_LLM_MODEL:-nemotron-3-nano}"
     capabilities:
       context_length: 8192

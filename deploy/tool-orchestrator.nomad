@@ -43,7 +43,7 @@ job "tool-orchestrator" {
         CODING_LLM_MODEL    = "qwen3-coder"
 
         # Fast delegate (Ollama)
-        FAST_LLM_URL   = "http://ollama.cluster:11434/api/chat"
+        FAST_LLM_URL   = "http://ollama.cluster:11434/v1"
         FAST_LLM_MODEL = "nemotron-3-nano"
 
         # Tools
