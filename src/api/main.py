@@ -24,6 +24,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from ..config import config
+from ..config_loader import load_delegates_config
+from ..tools.registry import ToolRegistry
 from .routes import health, chat
 
 
@@ -47,6 +49,42 @@ logger = logging.getLogger(__name__)
 async def lifespan(app: FastAPI):
     """Application lifespan handler for startup and shutdown events."""
     logger.info("Starting ToolOrchestrator API server")
+
+    # Log orchestrator configuration
+    logger.info("=" * 60)
+    logger.info("ORCHESTRATOR CONFIGURATION")
+    logger.info(f"  Base URL: {config.orchestrator.base_url}")
+    logger.info(f"  Model: {config.orchestrator.model}")
+    logger.info(f"  Temperature: {config.orchestrator.temperature}")
+    logger.info(f"  Max Steps: {config.orchestrator.max_steps}")
+
+    # Log delegate LLMs
+    logger.info("-" * 60)
+    logger.info("DELEGATE LLMS")
+    delegates_config = load_delegates_config()
+    for role, delegate in delegates_config.delegates.items():
+        logger.info(f"  [{delegate.tool_name}] {delegate.display_name}")
+        logger.info(f"    URL: {delegate.connection.base_url}")
+        logger.info(f"    Model: {delegate.connection.model}")
+        logger.info(f"    Type: {delegate.connection.type.value}")
+
+    # Log tool endpoints
+    logger.info("-" * 60)
+    logger.info("TOOL ENDPOINTS")
+    logger.info(f"  SearXNG: {config.tools.searxng_endpoint}")
+    logger.info(f"  Python Executor: {config.tools.python_executor_url}")
+
+    # Log registered tools
+    logger.info("-" * 60)
+    logger.info("REGISTERED TOOLS")
+    for name, tool in ToolRegistry.all_tools().items():
+        logger.info(f"  - {name}: {tool.description[:60]}...")
+
+    # Log fast-path status
+    logger.info("-" * 60)
+    logger.info(f"FAST-PATH ROUTING: {'ENABLED' if config.fast_path.enabled else 'DISABLED'}")
+    logger.info("=" * 60)
+
     yield
     logger.info("Shutting down ToolOrchestrator API server")
 
