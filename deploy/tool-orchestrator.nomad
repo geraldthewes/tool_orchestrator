@@ -32,7 +32,7 @@ job "tool-orchestrator" {
 
         # Orchestrator LLM
         ORCHESTRATOR_BASE_URL = "http://gpu005.cluster:8001/v1"
-        ORCHESTRATOR_MODEL    = "glm-reap"
+        ORCHESTRATOR_MODEL    = "nvidia/Nemotron-Orchestrator-8B"
 
         # Reasoning delegate (large model)
         REASONING_LLM_BASE_URL = "http://gx10-d8ce.cluster:8000/v1"
