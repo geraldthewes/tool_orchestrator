@@ -133,3 +133,25 @@ def format_result_for_llm(execution_result: dict) -> str:
         parts.append(f"Result: {execution_result['result']}")
 
     return "\n".join(parts) if parts else "Code executed successfully (no output)"
+
+
+# Register tool with the registry
+def _register():
+    from .registry import ToolRegistry
+
+    ToolRegistry.register(
+        name="python_execute",
+        description="Execute Python code safely in a sandbox",
+        parameters={
+            "code": "python code to execute",
+            "timeout": "execution timeout in seconds (default 30)",
+        },
+        handler=lambda params: execute_python(
+            code=params.get("code", ""),
+            timeout_seconds=params.get("timeout", 30),
+        ),
+        formatter=format_result_for_llm,
+    )
+
+
+_register()

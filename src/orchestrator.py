@@ -14,15 +14,7 @@ from typing import Optional, Callable
 from .llm_call import LLMClient
 from .config_loader import load_delegates_config
 from .models import DelegateConfig, DelegatesConfiguration
-from .tools import (
-    search,
-    format_search_results,
-    execute_python,
-    format_python_result,
-    calculate,
-    format_math_result,
-    format_delegate_result,
-)
+from .tools import format_delegate_result, ToolRegistry
 from .tools.llm_delegate import call_delegate
 
 logger = logging.getLogger(__name__)
@@ -62,29 +54,6 @@ class ToolOrchestrator:
     4. Produce final answers
     """
 
-    # Static tool handlers (non-delegate tools)
-    _STATIC_TOOL_HANDLERS: dict[str, Callable] = {
-        "web_search": lambda params: search(
-            query=params.get("query", ""),
-            categories=params.get("categories"),
-            num_results=params.get("num_results", 5),
-        ),
-        "python_execute": lambda params: execute_python(
-            code=params.get("code", ""),
-            timeout_seconds=params.get("timeout", 30),
-        ),
-        "calculate": lambda params: calculate(
-            expression=params.get("expression", ""),
-        ),
-    }
-
-    # Static tool formatters
-    _STATIC_TOOL_FORMATTERS: dict[str, Callable] = {
-        "web_search": format_search_results,
-        "python_execute": format_python_result,
-        "calculate": format_math_result,
-    }
-
     def __init__(
         self,
         llm_client: Optional[LLMClient] = None,
@@ -112,20 +81,16 @@ class ToolOrchestrator:
         # Load delegates configuration
         self.delegates_config = delegates_config or load_delegates_config()
 
-        # Initialize tool registries with static tools
-        self.tool_handlers: dict[str, Callable] = dict(self._STATIC_TOOL_HANDLERS)
-        self.tool_formatters: dict[str, Callable] = dict(self._STATIC_TOOL_FORMATTERS)
-
-        # Register delegate tools dynamically
+        # Build delegate tool handlers (registry handles static tools)
+        self.delegate_handlers: dict[str, Callable] = {}
         self._register_delegate_tools()
 
     def _register_delegate_tools(self) -> None:
-        """Register tool handlers for all configured delegates."""
+        """Register delegate tool handlers (stored locally, not in global registry)."""
         for role, delegate_config in self.delegates_config.delegates.items():
             tool_name = delegate_config.tool_name
             handler = self._create_delegate_handler(delegate_config)
-            self.tool_handlers[tool_name] = handler
-            self.tool_formatters[tool_name] = format_delegate_result
+            self.delegate_handlers[tool_name] = handler
             logger.debug(f"Registered delegate tool: {tool_name}")
 
     def _create_delegate_handler(self, config: DelegateConfig) -> Callable:
@@ -162,23 +127,23 @@ class ToolOrchestrator:
 
     def _build_system_prompt(self) -> str:
         """Build the system prompt with tool definitions."""
-        # Start with static tools
         prompt_parts = [
             "You are an AI assistant with access to the following tools:",
             "",
-            "1. **web_search**: Search the web for current information",
-            '   - Parameters: {"query": "search query", "categories": "optional category", "num_results": 5}',
-            "",
-            "2. **python_execute**: Execute Python code safely in a sandbox",
-            '   - Parameters: {"code": "python code to execute"}',
-            "   - Allowed modules: math, statistics, random, datetime, json, re, collections, itertools, functools",
-            "",
-            "3. **calculate**: Perform mathematical calculations",
-            '   - Parameters: {"expression": "math expression like 2+2 or sqrt(16)"}',
         ]
 
+        # Add tools from registry (static tools)
+        tool_num = 1
+        for name, tool in ToolRegistry.all_tools().items():
+            params_str = json.dumps(tool.parameters)
+            prompt_parts.extend([
+                f"{tool_num}. **{name}**: {tool.description}",
+                f"   - Parameters: {params_str}",
+                "",
+            ])
+            tool_num += 1
+
         # Add delegate tools dynamically
-        tool_num = 4
         for role, delegate in self.delegates_config.delegates.items():
             specializations = ", ".join(delegate.capabilities.specializations)
             prompt_parts.extend([
@@ -315,38 +280,52 @@ class ToolOrchestrator:
         Returns:
             ToolResult with execution outcome
         """
-        if tool_name not in self.tool_handlers:
-            return ToolResult(
-                tool_name=tool_name,
-                success=False,
-                result=f"Unknown tool: {tool_name}",
-            )
+        # Check registry for static tools first
+        tool = ToolRegistry.get(tool_name)
+        if tool:
+            try:
+                raw_result = tool.handler(params)
+                formatted_result = tool.formatter(raw_result)
+                return ToolResult(
+                    tool_name=tool_name,
+                    success=True,
+                    result=formatted_result,
+                    raw_data=raw_result if isinstance(raw_result, dict) else {"value": raw_result},
+                )
+            except Exception as e:
+                logger.error(f"Tool execution failed: {tool_name} - {e}")
+                return ToolResult(
+                    tool_name=tool_name,
+                    success=False,
+                    result=f"Tool execution error: {e}",
+                )
 
-        try:
-            handler = self.tool_handlers[tool_name]
-            raw_result = handler(params)
+        # Check delegate handlers
+        if tool_name in self.delegate_handlers:
+            try:
+                handler = self.delegate_handlers[tool_name]
+                raw_result = handler(params)
+                formatted_result = format_delegate_result(raw_result)
+                return ToolResult(
+                    tool_name=tool_name,
+                    success=True,
+                    result=formatted_result,
+                    raw_data=raw_result if isinstance(raw_result, dict) else {"value": raw_result},
+                )
+            except Exception as e:
+                logger.error(f"Delegate tool execution failed: {tool_name} - {e}")
+                return ToolResult(
+                    tool_name=tool_name,
+                    success=False,
+                    result=f"Tool execution error: {e}",
+                )
 
-            # Format the result for the LLM
-            formatter = self.tool_formatters.get(tool_name)
-            if formatter:
-                formatted_result = formatter(raw_result)
-            else:
-                formatted_result = str(raw_result)
-
-            return ToolResult(
-                tool_name=tool_name,
-                success=True,
-                result=formatted_result,
-                raw_data=raw_result if isinstance(raw_result, dict) else {"value": raw_result},
-            )
-
-        except Exception as e:
-            logger.error(f"Tool execution failed: {tool_name} - {e}")
-            return ToolResult(
-                tool_name=tool_name,
-                success=False,
-                result=f"Tool execution error: {e}",
-            )
+        # Unknown tool
+        return ToolResult(
+            tool_name=tool_name,
+            success=False,
+            result=f"Unknown tool: {tool_name}",
+        )
 
     def _log_trace_summary(self) -> None:
         """Log a compact trace summary."""

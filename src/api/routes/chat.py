@@ -29,6 +29,7 @@ from ..schemas import (
 from ...orchestrator import ToolOrchestrator
 from ...llm_call import LLMClient
 from ...config import config
+from ...query_router import QueryRouter
 
 logger = logging.getLogger(__name__)
 
@@ -162,6 +163,47 @@ def create_chat_completion(
     logger.debug(f"[{execution_id}] Full query: {query}")
 
     try:
+        # Check if fast-path routing is enabled
+        if config.fast_path.enabled:
+            query_router = QueryRouter()
+            routing = query_router.route(query)
+
+            if not routing.needs_orchestration:
+                logger.info(f"[{execution_id}] Fast-path response: {routing.reason}")
+                answer = routing.direct_response
+
+                # Return streaming response if requested
+                if request.stream:
+                    return StreamingResponse(
+                        _generate_streaming_response(answer, MODEL_ID),
+                        media_type="text/event-stream",
+                    )
+
+                # Estimate token counts
+                prompt_tokens = sum(
+                    len(msg.get_text_content().split()) * 2 for msg in request.messages
+                )
+                completion_tokens = len(answer.split()) * 2
+
+                return ChatCompletionResponse(
+                    model=MODEL_ID,
+                    choices=[
+                        ChatCompletionChoice(
+                            index=0,
+                            message=ChatCompletionMessage(content=answer),
+                            finish_reason="stop",
+                        )
+                    ],
+                    usage=UsageInfo(
+                        prompt_tokens=prompt_tokens,
+                        completion_tokens=completion_tokens,
+                        total_tokens=prompt_tokens + completion_tokens,
+                    ),
+                    trace=None,
+                )
+
+            logger.info(f"[{execution_id}] Routing to orchestrator: {routing.reason}")
+
         # Create orchestrator and run query
         # Enable verbose output when LOG_LEVEL is DEBUG
         verbose = config.log_level.upper() == "DEBUG"

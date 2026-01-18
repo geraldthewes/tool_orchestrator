@@ -62,12 +62,19 @@ class ServerConfig:
 
 
 @dataclass
+class FastPathConfig:
+    """Configuration for fast-path routing of simple queries."""
+    enabled: bool = os.getenv("FAST_PATH_ENABLED", "true").lower() == "true"
+
+
+@dataclass
 class Config:
     """Main configuration container."""
     orchestrator: OrchestratorConfig
     delegates: DelegateLLMConfig
     tools: ToolConfig
     server: ServerConfig
+    fast_path: FastPathConfig
     log_level: str = os.getenv("LOG_LEVEL", "INFO")
 
 
@@ -78,6 +85,7 @@ def get_config() -> Config:
         delegates=DelegateLLMConfig(),
         tools=ToolConfig(),
         server=ServerConfig(),
+        fast_path=FastPathConfig(),
     )
 
 

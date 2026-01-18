@@ -15,6 +15,10 @@ from .llm_delegate import (
     call_delegate,
     format_result_for_llm as format_delegate_result,
 )
+from .registry import ToolRegistry
+
+# Note: Tool registration happens automatically when the modules are imported above
+# Each tool module registers itself at module load time
 
 __all__ = [
     "search",
@@ -25,4 +29,5 @@ __all__ = [
     "format_math_result",
     "call_delegate",
     "format_delegate_result",
+    "ToolRegistry",
 ]

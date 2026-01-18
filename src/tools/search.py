@@ -96,3 +96,27 @@ def format_results_for_llm(search_results: dict) -> str:
         formatted += "\n"
 
     return formatted
+
+
+# Register tool with the registry
+def _register():
+    from .registry import ToolRegistry
+
+    ToolRegistry.register(
+        name="web_search",
+        description="Search the web for current information",
+        parameters={
+            "query": "search query",
+            "categories": "optional category (general, images, news)",
+            "num_results": "max results to return (default 5)",
+        },
+        handler=lambda params: search(
+            query=params.get("query", ""),
+            categories=params.get("categories"),
+            num_results=params.get("num_results", 5),
+        ),
+        formatter=format_results_for_llm,
+    )
+
+
+_register()

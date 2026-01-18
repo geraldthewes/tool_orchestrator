@@ -450,20 +450,32 @@ class TestToolHandlers:
 
     def test_all_tools_have_handlers(self):
         """Test that all tools have handlers and formatters."""
+        from src.tools import ToolRegistry
+
         orchestrator = ToolOrchestrator()
 
-        expected_tools = [
+        # Static tools should be in registry
+        expected_static_tools = [
             "web_search",
             "python_execute",
             "calculate",
+        ]
+
+        for tool in expected_static_tools:
+            tool_def = ToolRegistry.get(tool)
+            assert tool_def is not None, f"Missing registry entry for {tool}"
+            assert tool_def.handler is not None, f"Missing handler for {tool}"
+            assert tool_def.formatter is not None, f"Missing formatter for {tool}"
+
+        # Delegate tools should be in delegate_handlers
+        expected_delegate_tools = [
             "ask_reasoner",
             "ask_coder",
             "ask_fast",
         ]
 
-        for tool in expected_tools:
-            assert tool in orchestrator.tool_handlers, f"Missing handler for {tool}"
-            assert tool in orchestrator.tool_formatters, f"Missing formatter for {tool}"
+        for tool in expected_delegate_tools:
+            assert tool in orchestrator.delegate_handlers, f"Missing delegate handler for {tool}"
 
 
 class TestRunQueryConvenience:

@@ -164,3 +164,19 @@ def format_result_for_llm(calc_result: dict) -> str:
         return f"Calculation failed: {calc_result['error']}"
 
     return f"{calc_result['expression']} = {calc_result['result']}"
+
+
+# Register tool with the registry
+def _register():
+    from .registry import ToolRegistry
+
+    ToolRegistry.register(
+        name="calculate",
+        description="Perform mathematical calculations",
+        parameters={"expression": "math expression like 2+2 or sqrt(16)"},
+        handler=lambda params: calculate(params.get("expression", "")),
+        formatter=format_result_for_llm,
+    )
+
+
+_register()
