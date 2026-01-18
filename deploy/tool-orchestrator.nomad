@@ -20,9 +20,10 @@ job "tool-orchestrator" {
       driver = "docker"
 
       config {
-        image      = "registry.cluster:5000/tool-orchestrator:latest"
-        force_pull = true
-        ports      = ["http"]
+        image       = "registry.cluster:5000/tool-orchestrator:latest"
+        force_pull  = true
+        ports       = ["http"]
+        dns_servers = ["10.0.1.12", "10.0.1.13"]
       }
 
       env {
