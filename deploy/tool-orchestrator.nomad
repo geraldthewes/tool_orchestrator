@@ -31,7 +31,7 @@ job "tool-orchestrator" {
         SERVER_HOST = "0.0.0.0"
 
         # Orchestrator LLM
-        ORCHESTRATOR_BASE_URL = "http://gx10-d8ce.cluster:8000/v1"
+        ORCHESTRATOR_BASE_URL = "http://gpu005.cluster:8001/v1"
         ORCHESTRATOR_MODEL    = "glm-reap"
 
         # Reasoning delegate (large model)
@@ -39,15 +39,15 @@ job "tool-orchestrator" {
         REASONING_LLM_MODEL    = "glm-reap"
 
         # Coding delegate
-        CODING_LLM_BASE_URL = "http://gx10-d8ce.cluster:8000/v1"
+        CODING_LLM_BASE_URL = "http://vllm.cluster:8000/v1"
         CODING_LLM_MODEL    = "qwen3-coder"
 
         # Fast delegate (Ollama)
-        FAST_LLM_URL   = "http://ollama.service.consul:11434/api/chat"
+        FAST_LLM_URL   = "http://ollama.cluster:11434/api/chat"
         FAST_LLM_MODEL = "nemotron-3-nano"
 
         # Tools
-        SEARXNG_ENDPOINT     = "http://searxng.service.consul:8080/search"
+        SEARXNG_ENDPOINT     = "http://searxng.cluster:9999/search"
         PYTHON_EXECUTOR_URL  = "http://pyexec.cluster:9999/"
 
         # Runtime
