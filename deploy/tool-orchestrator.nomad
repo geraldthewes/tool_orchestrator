@@ -44,7 +44,7 @@ job "tool-orchestrator" {
 
         # Fast delegate (Ollama)
         FAST_LLM_URL   = "http://ollama.cluster:11434/v1"
-        FAST_LLM_MODEL = "nemotron-3-nano"
+        FAST_LLM_MODEL = "uaysk0327/nemotron-3-nano:30b-q4_k_xl"
 
         # Tools
         SEARXNG_ENDPOINT     = "http://searxng.cluster:9999/search"
