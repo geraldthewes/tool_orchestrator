@@ -2,8 +2,8 @@
 #
 # Langfuse Setup Script for Tool Orchestrator
 #
-# This script sets up Vault policy and stores Langfuse API keys
-# for the tool-orchestrator service.
+# This script stores Langfuse API keys in Vault for the tool-orchestrator service.
+# Uses the existing langfuse-policy which is already configured in the Nomad-Vault integration.
 #
 # Usage:
 #   ./scripts/langfuse-setup.sh
@@ -16,9 +16,8 @@
 
 set -euo pipefail
 
-SERVICE_NAME="tool-orchestrator"
-VAULT_PATH="secret/${SERVICE_NAME}/langfuse"
-POLICY_NAME="${SERVICE_NAME}-policy"
+# Use existing langfuse policy path that's already configured in Nomad
+VAULT_PATH="secret/langfuse/tool-orchestrator"
 
 # Colors for output
 RED='\033[0;31m'
@@ -55,23 +54,6 @@ check_prerequisites() {
     fi
 
     info "Prerequisites check passed"
-}
-
-# Create and register Vault policy
-setup_vault_policy() {
-    info "Setting up Vault policy: ${POLICY_NAME}"
-
-    # Create policy inline
-    vault policy write "${POLICY_NAME}" - <<EOF
-# Policy for ${SERVICE_NAME} service
-# Allows read access to Langfuse secrets
-
-path "secret/data/${SERVICE_NAME}/*" {
-  capabilities = ["read"]
-}
-EOF
-
-    info "Vault policy '${POLICY_NAME}' created successfully"
 }
 
 # Prompt for and store Langfuse keys
@@ -146,7 +128,6 @@ main() {
     echo ""
 
     check_prerequisites
-    setup_vault_policy
     store_langfuse_keys
     verify_keys
 

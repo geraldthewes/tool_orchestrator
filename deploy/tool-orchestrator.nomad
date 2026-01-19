@@ -27,13 +27,13 @@ job "tool-orchestrator" {
       }
 
       vault {
-        policies = ["tool-orchestrator-policy"]
+        policies = ["langfuse-policy"]
       }
 
-      # Langfuse secrets from Vault
+      # Langfuse secrets from Vault (uses existing langfuse-policy path)
       template {
         data = <<EOH
-[[ with secret "secret/data/tool-orchestrator/langfuse" ]]
+[[ with secret "secret/data/langfuse/tool-orchestrator" ]]
 LANGFUSE_PUBLIC_KEY=[[ .Data.data.public_key ]]
 LANGFUSE_SECRET_KEY=[[ .Data.data.secret_key ]]
 [[ end ]]
