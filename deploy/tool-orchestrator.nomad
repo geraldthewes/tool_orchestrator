@@ -26,6 +26,24 @@ job "tool-orchestrator" {
         dns_servers = ["10.0.1.12", "10.0.1.13"]
       }
 
+      vault {
+        policies = ["tool-orchestrator-policy"]
+      }
+
+      # Langfuse secrets from Vault
+      template {
+        data = <<EOH
+[[ with secret "secret/data/tool-orchestrator/langfuse" ]]
+LANGFUSE_PUBLIC_KEY=[[ .Data.data.public_key ]]
+LANGFUSE_SECRET_KEY=[[ .Data.data.secret_key ]]
+[[ end ]]
+EOH
+        destination     = "secrets/langfuse.env"
+        env             = true
+        left_delimiter  = "[["
+        right_delimiter = "]]"
+      }
+
       env {
         # Server configuration (port 8000 mapped via Nomad network)
         SERVER_HOST = "0.0.0.0"
@@ -53,6 +71,9 @@ job "tool-orchestrator" {
         # Runtime
         LOG_LEVEL               = "INFO"
         MAX_ORCHESTRATION_STEPS = "10"
+
+        # Langfuse (non-sensitive config)
+        LANGFUSE_HOST = "https://langfuse.cluster"
       }
 
       resources {

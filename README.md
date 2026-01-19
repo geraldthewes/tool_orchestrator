@@ -106,6 +106,28 @@ All endpoints are configurable via environment variables. See `.env.template` fo
 |----------|---------|-------------|
 | `SEARXNG_ENDPOINT` | `http://localhost:8080/search` | SearXNG search endpoint |
 
+### Observability (Langfuse)
+
+Langfuse tracing auto-enables when both API keys are provided.
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `LANGFUSE_PUBLIC_KEY` | `` | Langfuse public key (pk-lf-...) |
+| `LANGFUSE_SECRET_KEY` | `` | Langfuse secret key (sk-lf-...) |
+| `LANGFUSE_HOST` | `https://cloud.langfuse.com` | Langfuse host URL |
+
+When enabled, traces include:
+- API request lifecycle
+- Query routing decisions
+- Orchestration steps
+- LLM calls (orchestrator and delegates)
+- Tool executions
+
+**Cluster Deployment:** Use the setup script to configure Vault secrets:
+```bash
+./scripts/langfuse-setup.sh
+```
+
 ### Example Configurations
 
 #### Using Ollama Locally
@@ -212,22 +234,35 @@ tool_orchestrator/
 ├── requirements.txt             # Python dependencies
 ├── .env.template                # Environment template
 ├── config/
-│   └── tools.json               # Tool definitions
+│   └── delegates.yaml           # Delegate LLM definitions
+├── deploy/
+│   ├── build.yaml               # JobForge build config
+│   └── tool-orchestrator.nomad  # Nomad job specification
+├── scripts/
+│   └── langfuse-setup.sh        # Langfuse/Vault setup script
 ├── src/
 │   ├── __init__.py
 │   ├── config.py                # Configuration management
 │   ├── llm_call.py              # LLM client
 │   ├── orchestrator.py          # ReAct loop
 │   ├── interactive.py           # CLI interface
-│   └── tools/
+│   ├── api/                     # FastAPI server
+│   │   ├── main.py
+│   │   └── routes/
+│   ├── tools/
+│   │   ├── __init__.py
+│   │   ├── search.py            # SearXNG integration
+│   │   ├── python_executor.py   # Safe Python execution
+│   │   ├── math_solver.py       # Math expressions
+│   │   └── llm_delegate.py      # LLM delegation
+│   └── tracing/                 # Langfuse observability
 │       ├── __init__.py
-│       ├── search.py            # SearXNG integration
-│       ├── python_executor.py   # Safe Python execution
-│       ├── math_solver.py       # Math expressions
-│       └── llm_delegate.py      # LLM delegation
+│       ├── client.py            # Langfuse client wrapper
+│       └── context.py           # Request-scoped tracing
 └── tests/
     ├── test_tools.py
-    └── test_orchestration.py
+    ├── test_orchestration.py
+    └── test_tracing.py
 ```
 
 ## Development
