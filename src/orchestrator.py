@@ -11,6 +11,7 @@ import re
 from dataclasses import dataclass, field
 from typing import Optional, Callable
 
+from .config import config
 from .llm_call import LLMClient
 from .config_loader import load_delegates_config
 from .models import DelegateConfig, DelegatesConfiguration
@@ -97,12 +98,31 @@ class ToolOrchestrator:
             self.delegate_handlers[tool_name] = handler
             logger.debug(f"Registered delegate tool: {tool_name}")
 
-    def _create_delegate_handler(self, config: DelegateConfig) -> Callable:
+    def _truncate_for_tracing(self, text: str | None) -> str | None:
+        """Truncate text for tracing output based on config.
+
+        If LANGFUSE_OUTPUT_MAX_LENGTH is 0, returns full text (unlimited).
+        Otherwise truncates to the configured length.
+
+        Args:
+            text: The text to potentially truncate
+
+        Returns:
+            The text, truncated if necessary, or None if input was None
+        """
+        if text is None:
+            return None
+        max_len = config.langfuse.output_max_length
+        if max_len == 0:
+            return text
+        return text[:max_len]
+
+    def _create_delegate_handler(self, delegate_config: DelegateConfig) -> Callable:
         """
         Create a handler function for a delegate LLM.
 
         Args:
-            config: Delegate configuration
+            delegate_config: Delegate configuration
 
         Returns:
             Handler function for the delegate
@@ -112,9 +132,9 @@ class ToolOrchestrator:
             if "raw" in params and "prompt" not in params:
                 return {
                     "success": False,
-                    "model": config.role,
+                    "model": delegate_config.role,
                     "response": None,
-                    "error": f'Invalid input format for {config.tool_name}. Expected JSON: {{"prompt": "your question or task"}}',
+                    "error": f'Invalid input format for {delegate_config.tool_name}. Expected JSON: {{"prompt": "your question or task"}}',
                 }
 
             prompt = params.get("prompt", "")
@@ -123,28 +143,28 @@ class ToolOrchestrator:
             if not prompt or not prompt.strip():
                 return {
                     "success": False,
-                    "model": config.role,
+                    "model": delegate_config.role,
                     "response": None,
                     "error": f'Prompt is empty. Please provide a prompt in format: {{"prompt": "your question or task"}}',
                 }
 
-            temperature = params.get("temperature", config.defaults.temperature)
-            max_tokens = params.get("max_tokens", config.defaults.max_tokens)
+            temperature = params.get("temperature", delegate_config.defaults.temperature)
+            max_tokens = params.get("max_tokens", delegate_config.defaults.max_tokens)
 
             # Clamp max_tokens to capability limit
-            if max_tokens > config.capabilities.max_output_tokens:
+            if max_tokens > delegate_config.capabilities.max_output_tokens:
                 logger.warning(
                     f"Requested max_tokens ({max_tokens}) exceeds limit "
-                    f"({config.capabilities.max_output_tokens}) for {config.role}, clamping"
+                    f"({delegate_config.capabilities.max_output_tokens}) for {delegate_config.role}, clamping"
                 )
-                max_tokens = config.capabilities.max_output_tokens
+                max_tokens = delegate_config.capabilities.max_output_tokens
 
             return self._traced_delegate_call(
-                config=config,
+                config=delegate_config,
                 prompt=prompt,
                 temperature=temperature,
                 max_tokens=max_tokens,
-                timeout=config.defaults.timeout,
+                timeout=delegate_config.defaults.timeout,
             )
 
         return handler
@@ -306,7 +326,7 @@ class ToolOrchestrator:
 
             span.set_output({
                 "success": result.success,
-                "result": result.result[:500] if result.result else None,  # Truncate for tracing
+                "result": self._truncate_for_tracing(result.result),
             })
             if not result.success:
                 span.set_status("error")
@@ -600,7 +620,7 @@ class ToolOrchestrator:
             result = self._run_orchestration_loop(query, span_context=orch_span)
             orch_span.set_output({
                 "steps_taken": len(self.steps),
-                "final_answer": result[:500] if result else None,
+                "final_answer": self._truncate_for_tracing(result),
             })
             return result
 

@@ -79,6 +79,7 @@ class LangfuseConfig:
     flush_at: int = int(os.getenv("LANGFUSE_FLUSH_AT", "10"))
     flush_interval: float = float(os.getenv("LANGFUSE_FLUSH_INTERVAL", "1.0"))
     debug: bool = os.getenv("LANGFUSE_DEBUG", "false").lower() == "true"
+    output_max_length: int = int(os.getenv("LANGFUSE_OUTPUT_MAX_LENGTH", "0"))
 
     @property
     def enabled(self) -> bool:
