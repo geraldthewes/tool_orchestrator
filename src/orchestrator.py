@@ -108,7 +108,26 @@ class ToolOrchestrator:
             Handler function for the delegate
         """
         def handler(params: dict) -> dict:
+            # Check for malformed input (raw key present but prompt key missing)
+            if "raw" in params and "prompt" not in params:
+                return {
+                    "success": False,
+                    "model": config.role,
+                    "response": None,
+                    "error": f'Invalid input format for {config.tool_name}. Expected JSON: {{"prompt": "your question or task"}}',
+                }
+
             prompt = params.get("prompt", "")
+
+            # Check for empty prompt
+            if not prompt or not prompt.strip():
+                return {
+                    "success": False,
+                    "model": config.role,
+                    "response": None,
+                    "error": f'Prompt is empty. Please provide a prompt in format: {{"prompt": "your question or task"}}',
+                }
+
             temperature = params.get("temperature", config.defaults.temperature)
             max_tokens = params.get("max_tokens", config.defaults.max_tokens)
 

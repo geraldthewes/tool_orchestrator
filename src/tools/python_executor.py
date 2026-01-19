@@ -25,6 +25,15 @@ def execute_python(code: str, timeout_seconds: int = 30) -> dict:
     Returns:
         Dictionary with output, errors, and return value
     """
+    # Validate code is not empty
+    if not code or not code.strip():
+        return {
+            "success": False,
+            "error": 'Code is empty. Please provide Python code in format: {"code": "print(\'hello\')"}',
+            "output": "",
+            "result": None,
+        }
+
     base_url = config.tools.python_executor_url.rstrip("/")
     endpoint = f"{base_url}/api/v1/eval"
 
@@ -135,6 +144,21 @@ def format_result_for_llm(execution_result: dict) -> str:
     return "\n".join(parts) if parts else "Code executed successfully (no output)"
 
 
+def _handle_python_execute(params: dict) -> dict:
+    """Handle python_execute tool invocation with input validation."""
+    if "raw" in params and "code" not in params:
+        return {
+            "success": False,
+            "error": 'Invalid input format. Expected JSON: {"code": "python code to execute"}',
+            "output": "",
+            "result": None,
+        }
+    return execute_python(
+        code=params.get("code", ""),
+        timeout_seconds=params.get("timeout", 30),
+    )
+
+
 # Register tool with the registry
 def _register():
     from .registry import ToolRegistry
@@ -146,10 +170,7 @@ def _register():
             "code": "python code to execute",
             "timeout": "execution timeout in seconds (default 30)",
         },
-        handler=lambda params: execute_python(
-            code=params.get("code", ""),
-            timeout_seconds=params.get("timeout", 30),
-        ),
+        handler=_handle_python_execute,
         formatter=format_result_for_llm,
     )
 

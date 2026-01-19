@@ -29,6 +29,15 @@ def search(
     Returns:
         Dictionary with search results
     """
+    # Validate query is not empty
+    if not query or not query.strip():
+        return {
+            "query": query,
+            "error": 'Search query is empty. Please provide a search query in format: {"query": "your search terms"}',
+            "results": [],
+            "total": 0,
+        }
+
     params = {
         "q": query,
         "format": "json",
@@ -98,6 +107,22 @@ def format_results_for_llm(search_results: dict) -> str:
     return formatted
 
 
+def _handle_search(params: dict) -> dict:
+    """Handle search tool invocation with input validation."""
+    if "raw" in params and "query" not in params:
+        return {
+            "query": None,
+            "error": 'Invalid input format. Expected JSON: {"query": "your search terms"}. Received unparseable input.',
+            "results": [],
+            "total": 0,
+        }
+    return search(
+        query=params.get("query", ""),
+        categories=params.get("categories"),
+        num_results=params.get("num_results", 5),
+    )
+
+
 # Register tool with the registry
 def _register():
     from .registry import ToolRegistry
@@ -110,11 +135,7 @@ def _register():
             "categories": "optional category (general, images, news)",
             "num_results": "max results to return (default 5)",
         },
-        handler=lambda params: search(
-            query=params.get("query", ""),
-            categories=params.get("categories"),
-            num_results=params.get("num_results", 5),
-        ),
+        handler=_handle_search,
         formatter=format_results_for_llm,
     )
 

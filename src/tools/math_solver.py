@@ -109,6 +109,15 @@ def calculate(expression: str) -> dict:
     Returns:
         Dictionary with result or error
     """
+    # Validate expression is not empty
+    if not expression or not expression.strip():
+        return {
+            "success": False,
+            "expression": expression,
+            "result": None,
+            "error": 'Expression is empty. Please provide a math expression in format: {"expression": "2+2"}',
+        }
+
     try:
         # Parse the expression
         tree = ast.parse(expression, mode="eval")
@@ -166,6 +175,18 @@ def format_result_for_llm(calc_result: dict) -> str:
     return f"{calc_result['expression']} = {calc_result['result']}"
 
 
+def _handle_calculate(params: dict) -> dict:
+    """Handle calculate tool invocation with input validation."""
+    if "raw" in params and "expression" not in params:
+        return {
+            "success": False,
+            "expression": None,
+            "result": None,
+            "error": 'Invalid input format. Expected JSON: {"expression": "math expression like 2+2 or sqrt(16)"}',
+        }
+    return calculate(params.get("expression", ""))
+
+
 # Register tool with the registry
 def _register():
     from .registry import ToolRegistry
@@ -174,7 +195,7 @@ def _register():
         name="calculate",
         description="Perform mathematical calculations",
         parameters={"expression": "math expression like 2+2 or sqrt(16)"},
-        handler=lambda params: calculate(params.get("expression", "")),
+        handler=_handle_calculate,
         formatter=format_result_for_llm,
     )
 
