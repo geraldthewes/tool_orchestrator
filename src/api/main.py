@@ -26,6 +26,7 @@ from fastapi.responses import JSONResponse
 from ..config import config
 from ..config_loader import load_delegates_config
 from ..tools.registry import ToolRegistry
+from ..tracing import init_tracing_client, shutdown_tracing
 from .routes import health, chat
 
 
@@ -83,10 +84,34 @@ async def lifespan(app: FastAPI):
     # Log fast-path status
     logger.info("-" * 60)
     logger.info(f"FAST-PATH ROUTING: {'ENABLED' if config.fast_path.enabled else 'DISABLED'}")
+
+    # Initialize Langfuse tracing
+    logger.info("-" * 60)
+    logger.info("LANGFUSE OBSERVABILITY")
+    tracing_client = init_tracing_client(
+        public_key=config.langfuse.public_key,
+        secret_key=config.langfuse.secret_key,
+        host=config.langfuse.host,
+        flush_at=config.langfuse.flush_at,
+        flush_interval=config.langfuse.flush_interval,
+        debug=config.langfuse.debug,
+    )
+    if tracing_client.enabled:
+        logger.info(f"  Status: ENABLED")
+        logger.info(f"  Host: {config.langfuse.host or 'https://cloud.langfuse.com'}")
+    else:
+        logger.info(f"  Status: DISABLED")
+        if tracing_client.error:
+            logger.info(f"  Reason: {tracing_client.error}")
+
     logger.info("=" * 60)
 
     yield
+
+    # Shutdown tracing
     logger.info("Shutting down ToolOrchestrator API server")
+    shutdown_tracing()
+    logger.info("Tracing client shutdown complete")
 
 
 def create_app() -> FastAPI:

@@ -16,6 +16,7 @@ from .config_loader import load_delegates_config
 from .models import DelegateConfig, DelegatesConfiguration
 from .tools import format_delegate_result, ToolRegistry
 from .tools.llm_delegate import call_delegate
+from .tracing import TracingContext
 
 logger = logging.getLogger(__name__)
 
@@ -61,6 +62,7 @@ class ToolOrchestrator:
         verbose: bool = False,
         delegates_config: Optional[DelegatesConfiguration] = None,
         execution_id: Optional[str] = None,
+        tracing_context: Optional[TracingContext] = None,
     ):
         """
         Initialize the orchestrator.
@@ -71,11 +73,13 @@ class ToolOrchestrator:
             verbose: Enable verbose logging
             delegates_config: Configuration for delegate LLMs (loaded from YAML if not provided)
             execution_id: Optional ID for correlating logs across the orchestration
+            tracing_context: Optional tracing context for Langfuse observability
         """
         self.llm_client = llm_client or LLMClient()
         self.max_steps = max_steps
         self.verbose = verbose
         self.execution_id = execution_id
+        self.tracing_context = tracing_context
         self.steps: list[OrchestrationStep] = []
 
         # Load delegates configuration
@@ -116,6 +120,36 @@ class ToolOrchestrator:
                 )
                 max_tokens = config.capabilities.max_output_tokens
 
+            return self._traced_delegate_call(
+                config=config,
+                prompt=prompt,
+                temperature=temperature,
+                max_tokens=max_tokens,
+            )
+
+        return handler
+
+    def _traced_delegate_call(
+        self,
+        config: DelegateConfig,
+        prompt: str,
+        temperature: float,
+        max_tokens: int,
+    ) -> dict:
+        """
+        Call a delegate LLM with tracing.
+
+        Args:
+            config: Delegate configuration
+            prompt: The prompt to send
+            temperature: Sampling temperature
+            max_tokens: Maximum tokens to generate
+
+        Returns:
+            Result dictionary from call_delegate
+        """
+        # If no tracing context, call directly
+        if not self.tracing_context:
             return call_delegate(
                 connection=config.connection,
                 prompt=prompt,
@@ -123,7 +157,137 @@ class ToolOrchestrator:
                 max_tokens=max_tokens,
             )
 
-        return handler
+        # Wrap in generation context
+        with self.tracing_context.generation(
+            name=f"delegate_{config.role}",
+            model=config.connection.model,
+            input={"prompt": prompt},
+            metadata={
+                "role": config.role,
+                "connection_type": config.connection.type.value,
+                "base_url": config.connection.base_url,
+            },
+            model_parameters={
+                "temperature": temperature,
+                "max_tokens": max_tokens,
+            },
+        ) as gen:
+            result = call_delegate(
+                connection=config.connection,
+                prompt=prompt,
+                temperature=temperature,
+                max_tokens=max_tokens,
+            )
+
+            if result.get("success"):
+                gen.set_output(result.get("response", ""))
+            else:
+                gen.set_status("error")
+                gen.set_output(result.get("error", "Unknown error"))
+
+            return result
+
+    def _traced_orchestrator_call(
+        self,
+        messages: list[dict],
+        temperature: float,
+        max_tokens: int,
+        step_number: int,
+        span_context=None,
+    ) -> dict:
+        """
+        Call the orchestrator LLM with tracing.
+
+        Args:
+            messages: Message history to send
+            temperature: Sampling temperature
+            max_tokens: Maximum tokens to generate
+            step_number: Current step number for metadata
+            span_context: Parent span context if available
+
+        Returns:
+            Result dictionary from llm_client
+        """
+        # Determine the parent for the generation
+        parent = span_context if span_context else self.tracing_context
+
+        # If no tracing context, call directly
+        if not parent:
+            return self.llm_client.call_orchestrator(
+                messages=messages,
+                temperature=temperature,
+                max_tokens=max_tokens,
+            )
+
+        # Wrap in generation context
+        with parent.generation(
+            name="orchestrator_llm",
+            model=self.llm_client.orchestrator_model,
+            input={"messages": messages},
+            metadata={
+                "step_number": step_number,
+                "base_url": self.llm_client.orchestrator_url,
+            },
+            model_parameters={
+                "temperature": temperature,
+                "max_tokens": max_tokens,
+            },
+        ) as gen:
+            result = self.llm_client.call_orchestrator(
+                messages=messages,
+                temperature=temperature,
+                max_tokens=max_tokens,
+            )
+
+            if result.get("success"):
+                gen.set_output(result.get("response", ""))
+            else:
+                gen.set_status("error")
+                gen.set_output(result.get("error", "Unknown error"))
+
+            return result
+
+    def _traced_tool_execution(
+        self,
+        tool_name: str,
+        params: dict,
+        step_number: int,
+        span_context=None,
+    ) -> "ToolResult":
+        """
+        Execute a tool with tracing.
+
+        Args:
+            tool_name: Name of the tool to execute
+            params: Parameters for the tool
+            step_number: Current step number for metadata
+            span_context: Parent span context if available
+
+        Returns:
+            ToolResult from tool execution
+        """
+        parent = span_context if span_context else self.tracing_context
+
+        # If no tracing context, execute directly
+        if not parent:
+            return self._execute_tool(tool_name, params)
+
+        # Wrap in span context
+        with parent.span(
+            name=f"tool_{tool_name}",
+            metadata={"step_number": step_number},
+            input={"tool_name": tool_name, "params": params},
+        ) as span:
+            result = self._execute_tool(tool_name, params)
+
+            span.set_output({
+                "success": result.success,
+                "result": result.result[:500] if result.result else None,  # Truncate for tracing
+            })
+            if not result.success:
+                span.set_status("error")
+
+            return result
 
     def _build_system_prompt(self) -> str:
         """Build the system prompt with tool definitions."""
@@ -393,49 +557,56 @@ class ToolOrchestrator:
         self.steps = []
         logger.debug(f"Starting orchestration for: {query}")
 
+        # Use tracing span if available
+        if self.tracing_context:
+            return self._run_with_tracing(query)
+        else:
+            return self._run_orchestration_loop(query)
+
+    def _run_with_tracing(self, query: str) -> str:
+        """Run orchestration loop with tracing span."""
+        with self.tracing_context.span(
+            name="orchestration",
+            metadata={
+                "max_steps": self.max_steps,
+                "execution_id": self.execution_id,
+            },
+            input={"query": query},
+        ) as orch_span:
+            result = self._run_orchestration_loop(query, span_context=orch_span)
+            orch_span.set_output({
+                "steps_taken": len(self.steps),
+                "final_answer": result[:500] if result else None,
+            })
+            return result
+
+    def _run_orchestration_loop(self, query: str, span_context=None) -> str:
+        """
+        Execute the orchestration loop.
+
+        Args:
+            query: The user's question or task
+            span_context: Optional span context for tracing
+
+        Returns:
+            The final answer string
+        """
         for i in range(self.max_steps):
-            # Build messages and call the orchestrator model
-            messages = self._build_messages(query)
+            step_number = i + 1
 
-            if self.verbose:
-                logger.debug(f"Step {i + 1}: Calling orchestrator model")
-
-            response = self.llm_client.call_orchestrator(
-                messages=messages,
-                temperature=0.7,
-                max_tokens=1024,
-            )
-
-            if not response["success"]:
-                logger.error(f"Orchestrator call failed: {response['error']}")
-                return f"Error: {response['error']}"
-
-            # Parse the response
-            step = self._parse_response(response["response"])
-
-            if self.verbose:
-                logger.info(f"Step {step.step_number}:")
-                logger.info(f"  Thought: {step.reasoning}")
-                logger.info(f"  Action: {step.action}")
-                logger.info(f"  Input: {step.action_input}")
-
-            # Check if we have a final answer
-            if step.is_final:
-                self.steps.append(step)
-                logger.info(f"Completed in {len(self.steps)} steps")
-                self._log_trace_summary()
-                return step.final_answer or "No answer provided"
-
-            # Execute the tool
-            if step.action and step.action_input:
-                logger.info(f"Tool: {step.action}({json.dumps(step.action_input)})")
-                tool_result = self._execute_tool(step.action, step.action_input)
-                step.observation = tool_result.result
-
-                if self.verbose:
-                    logger.info(f"  Observation: {step.observation[:200]}...")
-
-            self.steps.append(step)
+            # Create step span if tracing is enabled
+            if span_context:
+                with span_context.child_span(
+                    name=f"step_{step_number}",
+                    metadata={"step_number": step_number},
+                ) as step_span:
+                    result = self._execute_step(query, step_number, step_span)
+                    if result is not None:
+                        return result
+            else:
+                result = self._execute_step(query, step_number, None)
+                if result is not None:
+                    return result
 
         # Max steps reached without final answer
         id_prefix = f"[{self.execution_id}] " if self.execution_id else ""
@@ -448,6 +619,69 @@ class ToolOrchestrator:
         return "I was unable to complete the task within the allowed number of steps. Here's what I found so far:\n\n" + "\n".join(
             f"Step {s.step_number}: {s.reasoning}" for s in self.steps if s.reasoning
         )
+
+    def _execute_step(self, query: str, step_number: int, span_context=None) -> str | None:
+        """
+        Execute a single orchestration step.
+
+        Args:
+            query: The user's original query
+            step_number: Current step number
+            span_context: Optional span context for tracing
+
+        Returns:
+            Final answer if reached, None otherwise
+        """
+        # Build messages and call the orchestrator model
+        messages = self._build_messages(query)
+
+        if self.verbose:
+            logger.debug(f"Step {step_number}: Calling orchestrator model")
+
+        response = self._traced_orchestrator_call(
+            messages=messages,
+            temperature=0.7,
+            max_tokens=1024,
+            step_number=step_number,
+            span_context=span_context,
+        )
+
+        if not response["success"]:
+            logger.error(f"Orchestrator call failed: {response['error']}")
+            return f"Error: {response['error']}"
+
+        # Parse the response
+        step = self._parse_response(response["response"])
+
+        if self.verbose:
+            logger.info(f"Step {step.step_number}:")
+            logger.info(f"  Thought: {step.reasoning}")
+            logger.info(f"  Action: {step.action}")
+            logger.info(f"  Input: {step.action_input}")
+
+        # Check if we have a final answer
+        if step.is_final:
+            self.steps.append(step)
+            logger.info(f"Completed in {len(self.steps)} steps")
+            self._log_trace_summary()
+            return step.final_answer or "No answer provided"
+
+        # Execute the tool
+        if step.action and step.action_input:
+            logger.info(f"Tool: {step.action}({json.dumps(step.action_input)})")
+            tool_result = self._traced_tool_execution(
+                tool_name=step.action,
+                params=step.action_input,
+                step_number=step_number,
+                span_context=span_context,
+            )
+            step.observation = tool_result.result
+
+            if self.verbose:
+                logger.info(f"  Observation: {step.observation[:200]}...")
+
+        self.steps.append(step)
+        return None
 
     def get_trace(self) -> list[dict]:
         """

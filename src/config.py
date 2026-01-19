@@ -68,6 +68,25 @@ class FastPathConfig:
 
 
 @dataclass
+class LangfuseConfig:
+    """Configuration for Langfuse observability.
+
+    Tracing auto-enables when both public_key and secret_key are provided.
+    """
+    public_key: str = os.getenv("LANGFUSE_PUBLIC_KEY", "")
+    secret_key: str = os.getenv("LANGFUSE_SECRET_KEY", "")
+    host: str = os.getenv("LANGFUSE_HOST", "")
+    flush_at: int = int(os.getenv("LANGFUSE_FLUSH_AT", "10"))
+    flush_interval: float = float(os.getenv("LANGFUSE_FLUSH_INTERVAL", "1.0"))
+    debug: bool = os.getenv("LANGFUSE_DEBUG", "false").lower() == "true"
+
+    @property
+    def enabled(self) -> bool:
+        """Auto-enable when both keys are configured."""
+        return bool(self.public_key and self.secret_key)
+
+
+@dataclass
 class Config:
     """Main configuration container."""
     orchestrator: OrchestratorConfig
@@ -75,6 +94,7 @@ class Config:
     tools: ToolConfig
     server: ServerConfig
     fast_path: FastPathConfig
+    langfuse: LangfuseConfig
     log_level: str = os.getenv("LOG_LEVEL", "INFO")
 
 
@@ -86,6 +106,7 @@ def get_config() -> Config:
         tools=ToolConfig(),
         server=ServerConfig(),
         fast_path=FastPathConfig(),
+        langfuse=LangfuseConfig(),
     )
 
 

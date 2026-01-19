@@ -54,6 +54,7 @@ class TestChatCompletionsEndpoint:
         """Chat completion should return successful response."""
         mock_instance = Mock()
         mock_instance.run.return_value = "The answer is 42"
+        mock_instance.steps = []  # Required for tracing metadata
         mock_orchestrator_class.return_value = mock_instance
 
         response = client.post(
@@ -75,6 +76,7 @@ class TestChatCompletionsEndpoint:
         """Chat completion should follow OpenAI response format."""
         mock_instance = Mock()
         mock_instance.run.return_value = "Test response"
+        mock_instance.steps = []  # Required for tracing metadata
         mock_orchestrator_class.return_value = mock_instance
 
         response = client.post(
@@ -123,6 +125,7 @@ class TestChatCompletionsEndpoint:
         """Chat completion with stream=true should return SSE response."""
         mock_instance = Mock()
         mock_instance.run.return_value = "Streamed response"
+        mock_instance.steps = []  # Required for tracing metadata
         mock_orchestrator_class.return_value = mock_instance
 
         response = client.post(
@@ -160,6 +163,7 @@ class TestChatCompletionsEndpoint:
         """Chat completion should use the last user message."""
         mock_instance = Mock()
         mock_instance.run.return_value = "Response"
+        mock_instance.steps = []  # Required for tracing metadata
         mock_orchestrator_class.return_value = mock_instance
 
         response = client.post(
@@ -185,6 +189,7 @@ class TestChatCompletionsEndpoint:
         """Chat completion should handle orchestrator errors."""
         mock_instance = Mock()
         mock_instance.run.side_effect = Exception("LLM connection failed")
+        mock_instance.steps = []  # Required for tracing metadata
         mock_orchestrator_class.return_value = mock_instance
 
         response = client.post(

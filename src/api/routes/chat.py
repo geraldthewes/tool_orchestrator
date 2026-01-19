@@ -30,6 +30,7 @@ from ...orchestrator import ToolOrchestrator
 from ...llm_call import LLMClient
 from ...config import config
 from ...query_router import QueryRouter
+from ...tracing import TracingContext, get_tracing_client
 
 logger = logging.getLogger(__name__)
 
@@ -162,11 +163,32 @@ def create_chat_completion(
     logger.info(f"[{execution_id}] Processing chat completion request: {query[:100]}...")
     logger.debug(f"[{execution_id}] Full query: {query}")
 
+    # Initialize tracing context
+    tracing_context = TracingContext(execution_id=execution_id)
+    tracing_context.start_trace(
+        name="chat_completion",
+        query=query,
+        metadata={"model": request.model, "stream": request.stream},
+    )
+
+    answer = None
+    status = "success"
+
     try:
         # Check if fast-path routing is enabled
         if config.fast_path.enabled:
             query_router = QueryRouter()
-            routing = query_router.route(query)
+
+            # Trace the routing decision
+            with tracing_context.span(
+                name="query_router",
+                input={"query": query},
+            ) as router_span:
+                routing = query_router.route(query)
+                router_span.set_output({
+                    "needs_orchestration": routing.needs_orchestration,
+                    "reason": routing.reason,
+                })
 
             if not routing.needs_orchestration:
                 logger.info(f"[{execution_id}] Fast-path response: {routing.reason}")
@@ -174,6 +196,8 @@ def create_chat_completion(
 
                 # Return streaming response if requested
                 if request.stream:
+                    tracing_context.end_trace(output=answer, status="success")
+                    _flush_tracing()
                     return StreamingResponse(
                         _generate_streaming_response(answer, MODEL_ID),
                         media_type="text/event-stream",
@@ -184,6 +208,13 @@ def create_chat_completion(
                     len(msg.get_text_content().split()) * 2 for msg in request.messages
                 )
                 completion_tokens = len(answer.split()) * 2
+
+                tracing_context.end_trace(
+                    output=answer,
+                    status="success",
+                    metadata={"route": "fast_path"},
+                )
+                _flush_tracing()
 
                 return ChatCompletionResponse(
                     model=MODEL_ID,
@@ -212,6 +243,7 @@ def create_chat_completion(
             llm_client=llm_client,
             verbose=verbose,
             execution_id=execution_id,
+            tracing_context=tracing_context,
         )
 
         answer = orchestrator.run(query)
@@ -220,6 +252,8 @@ def create_chat_completion(
         # Return streaming response if requested
         if request.stream:
             logger.debug("Returning streaming response")
+            tracing_context.end_trace(output=answer, status="success")
+            _flush_tracing()
             return StreamingResponse(
                 _generate_streaming_response(answer, MODEL_ID),
                 media_type="text/event-stream",
@@ -246,6 +280,13 @@ def create_chat_completion(
                 for step in orchestrator.get_trace()
             ]
 
+        tracing_context.end_trace(
+            output=answer,
+            status="success",
+            metadata={"route": "orchestrator", "steps": len(orchestrator.steps)},
+        )
+        _flush_tracing()
+
         return ChatCompletionResponse(
             model=MODEL_ID,
             choices=[
@@ -265,7 +306,17 @@ def create_chat_completion(
 
     except Exception as e:
         logger.exception(f"[{execution_id}] Chat completion failed: {e}")
+        status = "error"
+        tracing_context.end_trace(output=str(e), status="error")
+        _flush_tracing()
         raise HTTPException(
             status_code=500,
             detail=str(e),
         )
+
+
+def _flush_tracing() -> None:
+    """Flush tracing client if available."""
+    client = get_tracing_client()
+    if client:
+        client.flush()
