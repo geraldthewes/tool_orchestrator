@@ -70,6 +70,14 @@ class TracingClient:
             logger.debug(f"Tracing disabled: {self._error}")
             return
 
+        # Warn if host is provided but appears malformed (no protocol)
+        if host and not host.startswith(("http://", "https://")):
+            logger.warning(
+                f"LANGFUSE_HOST '{host}' may be malformed. "
+                "Expected format: http://hostname:port or https://hostname:port. "
+                "SDK may default to HTTPS port 443."
+            )
+
         # Try to initialize the client
         try:
             kwargs = {

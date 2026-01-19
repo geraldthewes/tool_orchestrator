@@ -281,6 +281,9 @@ class SpanContext:
         finally:
             child.end()
 
+    # Alias for child_span - allows unified API when parent is SpanContext or TracingContext
+    span = child_span
+
     @contextmanager
     def generation(
         self,

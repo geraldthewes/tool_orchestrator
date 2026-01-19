@@ -771,3 +771,182 @@ class TestGracefulDegradation:
             assert gen._generation is None
         finally:
             shutdown_tracing()
+
+
+class TestSpanContextSpanMethod:
+    """Tests for SpanContext.span() method (alias for child_span)."""
+
+    def test_span_method_exists(self):
+        """Test SpanContext has span method."""
+        from src.tracing.context import SpanContext
+
+        assert hasattr(SpanContext, "span")
+
+    def test_span_is_alias_for_child_span(self):
+        """Test span() is an alias for child_span()."""
+        from src.tracing.context import SpanContext
+
+        assert SpanContext.span is SpanContext.child_span
+
+    def test_span_creates_child_span_disabled(self):
+        """Test span() creates child span when disabled."""
+        from src.tracing.context import SpanContext
+
+        parent = SpanContext(name="parent", enabled=False)
+        parent.start()
+
+        with parent.span(name="child") as child:
+            assert child._span is None
+            assert child.name == "child"
+
+    @patch("src.tracing.client.Langfuse")
+    def test_span_creates_child_span_enabled(self, mock_langfuse_class):
+        """Test span() creates child span when enabled."""
+        from src.tracing.client import init_tracing_client, shutdown_tracing
+        from src.tracing.context import SpanContext
+
+        mock_instance = MagicMock()
+        mock_context_manager = MagicMock()
+        mock_span = MagicMock()
+        mock_context_manager.__enter__ = MagicMock(return_value=mock_span)
+        mock_context_manager.__exit__ = MagicMock(return_value=None)
+        mock_instance.start_as_current_observation.return_value = mock_context_manager
+        mock_langfuse_class.return_value = mock_instance
+
+        try:
+            init_tracing_client(public_key="pk-test", secret_key="sk-test")
+
+            parent = SpanContext(name="parent", enabled=True)
+            parent.start()
+
+            with parent.span(name="child_via_span") as child:
+                assert child.name == "child_via_span"
+                child.set_output({"test": "data"})
+        finally:
+            shutdown_tracing()
+
+
+class TestLangfuseEndpointConfiguration:
+    """Tests that verify Langfuse endpoint is configured correctly."""
+
+    @patch("src.tracing.client.Langfuse")
+    def test_host_with_protocol_and_port_passed_correctly(self, mock_langfuse_class):
+        """Test that full URL with protocol and port is passed to Langfuse SDK."""
+        from src.tracing.client import TracingClient
+
+        mock_instance = MagicMock()
+        mock_langfuse_class.return_value = mock_instance
+
+        client = TracingClient(
+            public_key="pk-test",
+            secret_key="sk-test",
+            host="http://langfuse.cluster:9999",
+        )
+
+        assert client.enabled is True
+        mock_langfuse_class.assert_called_once_with(
+            public_key="pk-test",
+            secret_key="sk-test",
+            debug=False,
+            host="http://langfuse.cluster:9999",
+        )
+
+    @patch("src.tracing.client.Langfuse")
+    def test_https_host_passed_correctly(self, mock_langfuse_class):
+        """Test that HTTPS URL is passed correctly."""
+        from src.tracing.client import TracingClient
+
+        mock_instance = MagicMock()
+        mock_langfuse_class.return_value = mock_instance
+
+        TracingClient(
+            public_key="pk-test",
+            secret_key="sk-test",
+            host="https://cloud.langfuse.com",
+        )
+
+        call_kwargs = mock_langfuse_class.call_args[1]
+        assert call_kwargs["host"] == "https://cloud.langfuse.com"
+
+    @patch("src.tracing.client.Langfuse")
+    def test_empty_host_not_passed_to_sdk(self, mock_langfuse_class):
+        """Test that empty host is not passed to SDK (uses SDK default)."""
+        from src.tracing.client import TracingClient
+
+        mock_instance = MagicMock()
+        mock_langfuse_class.return_value = mock_instance
+
+        TracingClient(
+            public_key="pk-test",
+            secret_key="sk-test",
+            host="",
+        )
+
+        call_kwargs = mock_langfuse_class.call_args[1]
+        assert "host" not in call_kwargs
+
+    @patch("src.tracing.client.Langfuse")
+    def test_custom_port_in_host_preserved(self, mock_langfuse_class):
+        """Test that custom port in host URL is preserved."""
+        from src.tracing.client import TracingClient
+
+        mock_instance = MagicMock()
+        mock_langfuse_class.return_value = mock_instance
+
+        TracingClient(
+            public_key="pk-test",
+            secret_key="sk-test",
+            host="http://localhost:3000",
+        )
+
+        call_kwargs = mock_langfuse_class.call_args[1]
+        assert call_kwargs["host"] == "http://localhost:3000"
+
+    @patch("src.tracing.client.Langfuse")
+    def test_warning_logged_for_host_without_protocol(self, mock_langfuse_class, caplog):
+        """Test warning is logged when host lacks protocol."""
+        from src.tracing.client import TracingClient
+        import logging
+
+        mock_instance = MagicMock()
+        mock_langfuse_class.return_value = mock_instance
+
+        with caplog.at_level(logging.WARNING):
+            TracingClient(
+                public_key="pk-test",
+                secret_key="sk-test",
+                host="langfuse.cluster",  # Missing protocol
+            )
+
+        assert "malformed" in caplog.text.lower() or "LANGFUSE_HOST" in caplog.text
+
+
+class TestOrchestratorTracingWithSpanContextParent:
+    """Tests for orchestrator tracing with SpanContext as parent."""
+
+    def test_traced_tool_execution_with_span_context_parent(self):
+        """Test _traced_tool_execution works when parent is SpanContext."""
+        from src.orchestrator import ToolOrchestrator
+        from src.tracing.context import SpanContext
+        from unittest.mock import Mock
+
+        mock_client = Mock()
+        orchestrator = ToolOrchestrator(
+            llm_client=mock_client,
+            tracing_context=None,
+        )
+
+        # Create a disabled SpanContext as parent (simulates nested span scenario)
+        parent_span = SpanContext(name="step_1", enabled=False)
+        parent_span.start()
+
+        # This should NOT raise AttributeError
+        result = orchestrator._traced_tool_execution(
+            tool_name="calculate",
+            params={"expression": "2 + 2"},
+            step_number=1,
+            span_context=parent_span,
+        )
+
+        assert result.success is True
+        assert "4" in result.result
