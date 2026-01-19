@@ -92,8 +92,6 @@ async def lifespan(app: FastAPI):
         public_key=config.langfuse.public_key,
         secret_key=config.langfuse.secret_key,
         host=config.langfuse.host,
-        flush_at=config.langfuse.flush_at,
-        flush_interval=config.langfuse.flush_interval,
         debug=config.langfuse.debug,
     )
     if tracing_client.enabled:

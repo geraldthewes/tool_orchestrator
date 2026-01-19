@@ -39,6 +39,8 @@ uvicorn src.api.main:app --reload --host 0.0.0.0 --port 8000  # dev mode
 
 Uses JobForge for CI/CD. Configuration is in `deploy/build.yaml`.
 
+**IMPORTANT: NEVER run `docker build` directly. Always use JobForge via `make build` or `jobforge submit-job`.**
+
 For full deployment guidance, see the [Cluster Deployment Guide](https://cluster-docs-https.service.consul:8444/services/DEPLOYMENT-GUIDE.md).
 
 **Preferred: Use Makefile targets**
