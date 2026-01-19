@@ -38,6 +38,7 @@ class DelegateDefaults:
     """Default generation parameters for a delegate LLM."""
     temperature: float = 0.7
     max_tokens: int = 2048
+    timeout: int = 120  # Request timeout in seconds
 
 
 @dataclass

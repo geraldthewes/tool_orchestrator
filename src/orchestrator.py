@@ -144,6 +144,7 @@ class ToolOrchestrator:
                 prompt=prompt,
                 temperature=temperature,
                 max_tokens=max_tokens,
+                timeout=config.defaults.timeout,
             )
 
         return handler
@@ -154,6 +155,7 @@ class ToolOrchestrator:
         prompt: str,
         temperature: float,
         max_tokens: int,
+        timeout: int,
     ) -> dict:
         """
         Call a delegate LLM with tracing.
@@ -163,6 +165,7 @@ class ToolOrchestrator:
             prompt: The prompt to send
             temperature: Sampling temperature
             max_tokens: Maximum tokens to generate
+            timeout: Request timeout in seconds
 
         Returns:
             Result dictionary from call_delegate
@@ -174,6 +177,7 @@ class ToolOrchestrator:
                 prompt=prompt,
                 temperature=temperature,
                 max_tokens=max_tokens,
+                timeout=timeout,
             )
 
         # Wrap in generation context
@@ -196,6 +200,7 @@ class ToolOrchestrator:
                 prompt=prompt,
                 temperature=temperature,
                 max_tokens=max_tokens,
+                timeout=timeout,
             )
 
             if result.get("success"):

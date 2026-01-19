@@ -405,6 +405,7 @@ class TestOrchestratorTracingIntegration:
             prompt="Test prompt",
             temperature=0.7,
             max_tokens=100,
+            timeout=120,
         )
 
         assert result["success"] is True

@@ -78,9 +78,14 @@ def _parse_capabilities(data: dict) -> DelegateCapabilities:
 
 def _parse_defaults(data: dict) -> DelegateDefaults:
     """Parse defaults configuration from dict."""
+    timeout_value = data.get("timeout", 120)
+    if isinstance(timeout_value, str):
+        timeout_value = int(resolve_env_vars(timeout_value))
+
     return DelegateDefaults(
         temperature=data.get("temperature", 0.7),
         max_tokens=data.get("max_tokens", 2048),
+        timeout=timeout_value,
     )
 
 
