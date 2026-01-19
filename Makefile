@@ -1,6 +1,12 @@
 # ToolOrchestra Makefile
 
-.PHONY: help install setup test lint format clean interactive query check-endpoint server server-dev build deploy restart status
+# Service Registration
+SERVICE_NAME := tool-orchestrator
+SERVICE_URL := http://tool-orchestrator.service.consul:9999
+SERVICE_DESC := LLM tool orchestration framework using ReAct-style reasoning
+SERVICE_SOURCE := https://github.com/geraldthewes/tool_orchestrator
+
+.PHONY: help install setup test lint format clean interactive query check-endpoint server server-dev build deploy restart status unregister
 
 help:
 	@echo "ToolOrchestra Commands:"
@@ -29,6 +35,7 @@ help:
 	@echo "  make deploy        - Deploy to Nomad cluster and restart to pull new image"
 	@echo "  make restart       - Restart running allocations to pull new image"
 	@echo "  make status        - Check deployment status"
+	@echo "  make unregister    - Remove service from cluster registry"
 	@echo ""
 
 # Setup
@@ -89,6 +96,17 @@ deploy:
 	nomad job run deploy/tool-orchestrator.nomad
 	@echo "Restarting allocations to pull new image..."
 	nomad job restart -on-error=fail tool-orchestrator
+	@echo "Registering service with cluster registry..."
+	register-service --name $(SERVICE_NAME) \
+		--url "$(SERVICE_URL)" \
+		--description "$(SERVICE_DESC)" \
+		--type ondemand \
+		--source "$(SERVICE_SOURCE)" \
+		--endpoint api="/v1/chat/completions" \
+		--endpoint health="/health"
+
+unregister:
+	register-service --unregister --name $(SERVICE_NAME)
 
 restart:
 	nomad job restart -on-error=fail tool-orchestrator
