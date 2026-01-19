@@ -89,11 +89,49 @@ class TracingClient:
                 kwargs["host"] = host
 
             self._client = Langfuse(**kwargs)
+
+            # Validate connectivity at startup to catch misconfiguration early
+            if not self._validate_connectivity():
+                return
+
             self._enabled = True
             logger.info(f"Langfuse tracing enabled (host: {host or 'default'})")
         except Exception as e:
             self._error = f"Failed to initialize Langfuse client: {e}"
             logger.warning(f"Tracing disabled: {self._error}")
+
+    def _validate_connectivity(self) -> bool:
+        """
+        Validate connectivity to Langfuse server at startup.
+
+        Uses auth_check() to verify the endpoint is reachable and credentials are valid.
+        If validation fails, disables tracing and logs a warning.
+
+        Returns:
+            True if connectivity is valid, False otherwise
+        """
+        if not self._client:
+            return False
+
+        try:
+            result = self._client.auth_check()
+            if not result:
+                self._error = (
+                    "Langfuse auth_check() failed - endpoint may be unreachable or "
+                    "credentials may be invalid. Check LANGFUSE_HOST configuration."
+                )
+                logger.warning(f"Tracing disabled: {self._error}")
+                self._client = None
+                return False
+            return True
+        except Exception as e:
+            self._error = (
+                f"Langfuse connectivity check failed: {e}. "
+                "Check LANGFUSE_HOST configuration (expected format: http://hostname:port)"
+            )
+            logger.warning(f"Tracing disabled: {self._error}")
+            self._client = None
+            return False
 
     @property
     def enabled(self) -> bool:

@@ -73,7 +73,7 @@ EOH
         MAX_ORCHESTRATION_STEPS = "10"
 
         # Langfuse (non-sensitive config)
-        LANGFUSE_HOST = "https://langfuse.cluster"
+        LANGFUSE_HOST = "http://langfuse.cluster:9999"
       }
 
       resources {

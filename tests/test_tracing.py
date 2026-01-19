@@ -950,3 +950,98 @@ class TestOrchestratorTracingWithSpanContextParent:
 
         assert result.success is True
         assert "4" in result.result
+
+
+class TestConnectivityValidation:
+    """Tests for startup connectivity validation."""
+
+    @patch("src.tracing.client.Langfuse")
+    def test_client_disabled_when_auth_check_fails(self, mock_langfuse_class, caplog):
+        """Test client is disabled when auth_check returns False."""
+        from src.tracing.client import TracingClient
+        import logging
+
+        mock_instance = MagicMock()
+        mock_instance.auth_check.return_value = False
+        mock_langfuse_class.return_value = mock_instance
+
+        with caplog.at_level(logging.WARNING):
+            client = TracingClient(
+                public_key="pk-test",
+                secret_key="sk-test",
+                host="http://langfuse.cluster:9999",
+            )
+
+        assert client.enabled is False
+        assert client.client is None
+        assert "auth_check" in client.error.lower()
+        assert "tracing disabled" in caplog.text.lower()
+
+    @patch("src.tracing.client.Langfuse")
+    def test_client_disabled_when_auth_check_raises_exception(self, mock_langfuse_class, caplog):
+        """Test client is disabled when auth_check raises an exception (unreachable endpoint)."""
+        from src.tracing.client import TracingClient
+        import logging
+
+        mock_instance = MagicMock()
+        mock_instance.auth_check.side_effect = Exception(
+            "ConnectionError: Failed to connect to http://langfuse.cluster:9999"
+        )
+        mock_langfuse_class.return_value = mock_instance
+
+        with caplog.at_level(logging.WARNING):
+            client = TracingClient(
+                public_key="pk-test",
+                secret_key="sk-test",
+                host="http://langfuse.cluster:9999",
+            )
+
+        assert client.enabled is False
+        assert client.client is None
+        assert "connectivity check failed" in client.error.lower()
+        assert "langfuse_host" in client.error.lower()
+        assert "tracing disabled" in caplog.text.lower()
+
+    @patch("src.tracing.client.Langfuse")
+    def test_client_enabled_when_auth_check_succeeds(self, mock_langfuse_class, caplog):
+        """Test client is enabled when auth_check returns True."""
+        from src.tracing.client import TracingClient
+        import logging
+
+        mock_instance = MagicMock()
+        mock_instance.auth_check.return_value = True
+        mock_langfuse_class.return_value = mock_instance
+
+        with caplog.at_level(logging.INFO):
+            client = TracingClient(
+                public_key="pk-test",
+                secret_key="sk-test",
+                host="http://langfuse.cluster:9999",
+            )
+
+        assert client.enabled is True
+        assert client.client is mock_instance
+        assert client.error is None
+        assert "tracing enabled" in caplog.text.lower()
+
+    @patch("src.tracing.client.Langfuse")
+    def test_no_exception_propagates_on_connectivity_failure(self, mock_langfuse_class):
+        """Test that no exceptions propagate when connectivity fails - graceful degradation."""
+        from src.tracing.client import TracingClient
+
+        mock_instance = MagicMock()
+        mock_instance.auth_check.side_effect = Exception("Network unreachable")
+        mock_langfuse_class.return_value = mock_instance
+
+        # Should not raise any exception
+        client = TracingClient(
+            public_key="pk-test",
+            secret_key="sk-test",
+            host="http://unreachable.host:9999",
+        )
+
+        # Tracing should be disabled but app should continue working
+        assert client.enabled is False
+        # All operations should be no-ops
+        client.flush()  # Should not raise
+        client.shutdown()  # Should not raise
