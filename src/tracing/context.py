@@ -1,6 +1,7 @@
 """
-Request-scoped tracing context.
+Request-scoped tracing context using Langfuse SDK v3.
 
+Uses OpenTelemetry-based API with automatic context propagation.
 Provides context managers for managing trace lifecycle, spans, and generations
 with automatic graceful degradation when tracing is disabled.
 """
@@ -19,16 +20,16 @@ logger = logging.getLogger(__name__)
 @dataclass
 class TracingContext:
     """
-    Request-scoped tracing context.
+    Request-scoped tracing context using Langfuse SDK v3.
 
     Manages the lifecycle of a trace for a single API request,
-    including nested spans and generations.
+    including nested spans and generations via OTEL context propagation.
     """
 
     execution_id: str
     session_id: Optional[str] = None
     user_id: Optional[str] = None
-    _trace: Any = field(default=None, repr=False)
+    _root_span: Any = field(default=None, repr=False)
     _enabled: bool = field(default=False, repr=False)
     _start_time: float = field(default_factory=time.time, repr=False)
 
@@ -46,6 +47,8 @@ class TracingContext:
         """
         Start a new trace for this request.
 
+        In v3, we create a root span and set trace attributes on it.
+
         Args:
             name: Name for the trace
             query: Input query to record
@@ -55,7 +58,7 @@ class TracingContext:
             return
 
         client = get_tracing_client()
-        if not client:
+        if not client or not client.client:
             return
 
         try:
@@ -64,18 +67,26 @@ class TracingContext:
             if metadata:
                 trace_metadata.update(metadata)
 
-            self._trace = client.create_trace(
+            # In v3, create a root span that acts as the trace container
+            self._root_span = client.client.start_as_current_observation(
+                as_type="span",
                 name=name,
-                trace_id=self.execution_id,
-                session_id=self.session_id,
-                user_id=self.user_id,
-                metadata=trace_metadata,
                 input=input_data,
+                metadata=trace_metadata,
             )
+            # Enter the context manager manually
+            self._root_span.__enter__()
+
+            # Set trace-level attributes
+            self._root_span.update_trace(
+                user_id=self.user_id,
+                session_id=self.session_id,
+            )
+
             self._start_time = time.time()
         except Exception as e:
             logger.warning(f"Failed to start trace: {e}")
-            self._trace = None
+            self._root_span = None
 
     def end_trace(
         self,
@@ -91,20 +102,22 @@ class TracingContext:
             status: Status of the request (success, error)
             metadata: Additional metadata to add
         """
-        if not self._enabled or not self._trace:
+        if not self._enabled or not self._root_span:
             return
 
         try:
             duration_ms = (time.time() - self._start_time) * 1000
-            update_data = {
-                "output": output,
-                "metadata": {
-                    "status": status,
-                    "duration_ms": round(duration_ms, 2),
-                    **(metadata or {}),
-                },
+            update_metadata = {
+                "status": status,
+                "duration_ms": round(duration_ms, 2),
+                **(metadata or {}),
             }
-            self._trace.update(**update_data)
+            self._root_span.update(
+                output=output,
+                metadata=update_metadata,
+            )
+            # Exit the context manager
+            self._root_span.__exit__(None, None, None)
         except Exception as e:
             logger.warning(f"Failed to end trace: {e}")
 
@@ -128,7 +141,6 @@ class TracingContext:
         """
         span_ctx = SpanContext(
             name=name,
-            trace=self._trace,
             enabled=self._enabled,
             metadata=metadata,
             input=input,
@@ -164,7 +176,6 @@ class TracingContext:
         gen_ctx = GenerationContext(
             name=name,
             model=model,
-            trace=self._trace,
             enabled=self._enabled,
             input=input,
             metadata=metadata,
@@ -179,10 +190,9 @@ class TracingContext:
 
 @dataclass
 class SpanContext:
-    """Context manager for a tracing span."""
+    """Context manager for a tracing span using SDK v3."""
 
     name: str
-    trace: Any = None
     enabled: bool = False
     metadata: Optional[dict] = None
     input: Optional[dict] = None
@@ -192,19 +202,26 @@ class SpanContext:
     _status: str = field(default="success", repr=False)
 
     def start(self) -> None:
-        """Start the span."""
-        if not self.enabled or not self.trace:
+        """Start the span using v3 API."""
+        if not self.enabled:
+            return
+
+        client = get_tracing_client()
+        if not client or not client.client:
             return
 
         try:
             self._start_time = time.time()
-            kwargs = {"name": self.name}
-            if self.metadata:
-                kwargs["metadata"] = self.metadata
-            if self.input:
-                kwargs["input"] = self.input
 
-            self._span = self.trace.span(**kwargs)
+            # Create span using v3 API - OTEL handles nesting automatically
+            self._span = client.client.start_as_current_observation(
+                as_type="span",
+                name=self.name,
+                metadata=self.metadata,
+                input=self.input,
+            )
+            # Enter the context manager manually
+            self._span.__enter__()
         except Exception as e:
             logger.warning(f"Failed to start span '{self.name}': {e}")
             self._span = None
@@ -216,17 +233,17 @@ class SpanContext:
 
         try:
             duration_ms = (time.time() - self._start_time) * 1000
-            update_data = {
-                "metadata": {
-                    "status": self._status,
-                    "duration_ms": round(duration_ms, 2),
-                },
+            update_metadata = {
+                "status": self._status,
+                "duration_ms": round(duration_ms, 2),
             }
+            update_kwargs = {"metadata": update_metadata}
             if self._output:
-                update_data["output"] = self._output
+                update_kwargs["output"] = self._output
 
-            self._span.update(**update_data)
-            self._span.end()
+            self._span.update(**update_kwargs)
+            # Exit the context manager
+            self._span.__exit__(None, None, None)
         except Exception as e:
             logger.warning(f"Failed to end span '{self.name}': {e}")
 
@@ -245,10 +262,9 @@ class SpanContext:
         metadata: Optional[dict] = None,
         input: Optional[dict] = None,
     ) -> Generator["SpanContext", None, None]:
-        """Create a child span."""
+        """Create a child span - nesting handled automatically by OTEL."""
         child = SpanContext(
             name=name,
-            trace=self._span if self._span else self.trace,
             enabled=self.enabled,
             metadata=metadata,
             input=input,
@@ -268,11 +284,10 @@ class SpanContext:
         metadata: Optional[dict] = None,
         model_parameters: Optional[dict] = None,
     ) -> Generator["GenerationContext", None, None]:
-        """Create a generation within this span."""
+        """Create a generation within this span - nesting handled by OTEL."""
         gen_ctx = GenerationContext(
             name=name,
             model=model,
-            trace=self._span if self._span else self.trace,
             enabled=self.enabled,
             input=input,
             metadata=metadata,
@@ -287,11 +302,10 @@ class SpanContext:
 
 @dataclass
 class GenerationContext:
-    """Context manager for LLM generation tracking."""
+    """Context manager for LLM generation tracking using SDK v3."""
 
     name: str
     model: str
-    trace: Any = None
     enabled: bool = False
     input: Optional[Any] = None
     metadata: Optional[dict] = None
@@ -303,24 +317,28 @@ class GenerationContext:
     _status: str = field(default="success", repr=False)
 
     def start(self) -> None:
-        """Start the generation."""
-        if not self.enabled or not self.trace:
+        """Start the generation using v3 API."""
+        if not self.enabled:
+            return
+
+        client = get_tracing_client()
+        if not client or not client.client:
             return
 
         try:
             self._start_time = time.time()
-            kwargs = {
-                "name": self.name,
-                "model": self.model,
-            }
-            if self.input:
-                kwargs["input"] = self.input
-            if self.metadata:
-                kwargs["metadata"] = self.metadata
-            if self.model_parameters:
-                kwargs["model_parameters"] = self.model_parameters
 
-            self._generation = self.trace.generation(**kwargs)
+            # Create generation using v3 API
+            self._generation = client.client.start_as_current_observation(
+                as_type="generation",
+                name=self.name,
+                model=self.model,
+                input=self.input,
+                metadata=self.metadata,
+                model_parameters=self.model_parameters,
+            )
+            # Enter the context manager manually
+            self._generation.__enter__()
         except Exception as e:
             logger.warning(f"Failed to start generation '{self.name}': {e}")
             self._generation = None
@@ -332,19 +350,19 @@ class GenerationContext:
 
         try:
             duration_ms = (time.time() - self._start_time) * 1000
-            update_data = {
-                "metadata": {
-                    "status": self._status,
-                    "duration_ms": round(duration_ms, 2),
-                },
+            update_metadata = {
+                "status": self._status,
+                "duration_ms": round(duration_ms, 2),
             }
+            update_kwargs = {"metadata": update_metadata}
             if self._output is not None:
-                update_data["output"] = self._output
+                update_kwargs["output"] = self._output
             if self._usage:
-                update_data["usage"] = self._usage
+                update_kwargs["usage"] = self._usage
 
-            self._generation.update(**update_data)
-            self._generation.end()
+            self._generation.update(**update_kwargs)
+            # Exit the context manager
+            self._generation.__exit__(None, None, None)
         except Exception as e:
             logger.warning(f"Failed to end generation '{self.name}': {e}")
 

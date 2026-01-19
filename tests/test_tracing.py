@@ -1,5 +1,5 @@
 """
-Tests for Langfuse tracing integration.
+Tests for Langfuse tracing integration with SDK v3.
 
 Tests cover:
 - Client disabled states (config, credentials, import error)
@@ -70,14 +70,6 @@ class TestTracingClient:
 
         client = TracingClient()
         assert client.error is not None
-
-    def test_create_trace_returns_none_when_disabled(self):
-        """Test create_trace returns None when tracing disabled."""
-        from src.tracing.client import TracingClient
-
-        client = TracingClient()
-        result = client.create_trace(name="test")
-        assert result is None
 
     def test_flush_no_op_when_disabled(self):
         """Test flush is a no-op when tracing disabled."""
@@ -158,7 +150,7 @@ class TestTracingContext:
         ctx = TracingContext(execution_id="test-123")
         # Should not raise
         ctx.start_trace(name="test", query="test query")
-        assert ctx._trace is None
+        assert ctx._root_span is None
 
     def test_end_trace_no_op_when_disabled(self):
         """Test end_trace is no-op when disabled."""
@@ -466,7 +458,7 @@ class TestOrchestratorTracingIntegration:
 
 
 class TestTracingWithMockedLangfuse:
-    """Tests with mocked Langfuse client."""
+    """Tests with mocked Langfuse client for SDK v3."""
 
     @patch("src.tracing.client.Langfuse")
     def test_client_enabled_with_valid_credentials(self, mock_langfuse_class):
@@ -484,27 +476,6 @@ class TestTracingWithMockedLangfuse:
         assert client.enabled is True
         assert client.error is None
         mock_langfuse_class.assert_called_once()
-
-    @patch("src.tracing.client.Langfuse")
-    def test_create_trace_calls_langfuse(self, mock_langfuse_class):
-        """Test create_trace calls underlying Langfuse client."""
-        from src.tracing.client import TracingClient
-
-        mock_instance = MagicMock()
-        mock_langfuse_class.return_value = mock_instance
-
-        client = TracingClient(
-            public_key="pk-test",
-            secret_key="sk-test",
-        )
-
-        client.create_trace(
-            name="test_trace",
-            trace_id="trace-123",
-            session_id="session-456",
-        )
-
-        mock_instance.trace.assert_called_once()
 
     @patch("src.tracing.client.Langfuse")
     def test_flush_calls_langfuse(self, mock_langfuse_class):
@@ -538,27 +509,58 @@ class TestTracingWithMockedLangfuse:
         client.shutdown()
         mock_instance.shutdown.assert_called_once()
 
+    @patch("src.tracing.client.Langfuse")
+    def test_start_as_current_observation_called_for_span(self, mock_langfuse_class):
+        """Test start_as_current_observation is called when starting a span."""
+        from src.tracing.client import TracingClient, init_tracing_client, shutdown_tracing
+        from src.tracing.context import SpanContext
+
+        mock_instance = MagicMock()
+        mock_observation = MagicMock()
+        mock_instance.start_as_current_observation.return_value = mock_observation
+        mock_langfuse_class.return_value = mock_instance
+
+        try:
+            init_tracing_client(public_key="pk-test", secret_key="sk-test")
+
+            span = SpanContext(name="test_span", enabled=True)
+            span.start()
+
+            mock_instance.start_as_current_observation.assert_called_once()
+            call_kwargs = mock_instance.start_as_current_observation.call_args[1]
+            assert call_kwargs["as_type"] == "span"
+            assert call_kwargs["name"] == "test_span"
+        finally:
+            shutdown_tracing()
+
+    @patch("src.tracing.client.Langfuse")
+    def test_start_as_current_observation_called_for_generation(self, mock_langfuse_class):
+        """Test start_as_current_observation is called when starting a generation."""
+        from src.tracing.client import init_tracing_client, shutdown_tracing
+        from src.tracing.context import GenerationContext
+
+        mock_instance = MagicMock()
+        mock_observation = MagicMock()
+        mock_instance.start_as_current_observation.return_value = mock_observation
+        mock_langfuse_class.return_value = mock_instance
+
+        try:
+            init_tracing_client(public_key="pk-test", secret_key="sk-test")
+
+            gen = GenerationContext(name="test_gen", model="gpt-4", enabled=True)
+            gen.start()
+
+            mock_instance.start_as_current_observation.assert_called_once()
+            call_kwargs = mock_instance.start_as_current_observation.call_args[1]
+            assert call_kwargs["as_type"] == "generation"
+            assert call_kwargs["name"] == "test_gen"
+            assert call_kwargs["model"] == "gpt-4"
+        finally:
+            shutdown_tracing()
+
 
 class TestGracefulDegradation:
     """Tests for graceful degradation on errors."""
-
-    @patch("src.tracing.client.Langfuse")
-    def test_create_trace_handles_exception(self, mock_langfuse_class):
-        """Test create_trace handles exceptions gracefully."""
-        from src.tracing.client import TracingClient
-
-        mock_instance = MagicMock()
-        mock_instance.trace.side_effect = Exception("Connection error")
-        mock_langfuse_class.return_value = mock_instance
-
-        client = TracingClient(
-            public_key="pk-test",
-            secret_key="sk-test",
-        )
-
-        # Should not raise, returns None
-        result = client.create_trace(name="test")
-        assert result is None
 
     @patch("src.tracing.client.Langfuse")
     def test_flush_handles_exception(self, mock_langfuse_class):
@@ -593,3 +595,43 @@ class TestGracefulDegradation:
 
         # Should not raise
         client.shutdown()
+
+    @patch("src.tracing.client.Langfuse")
+    def test_span_start_handles_exception(self, mock_langfuse_class):
+        """Test span start handles exceptions gracefully."""
+        from src.tracing.client import init_tracing_client, shutdown_tracing
+        from src.tracing.context import SpanContext
+
+        mock_instance = MagicMock()
+        mock_instance.start_as_current_observation.side_effect = Exception("Start error")
+        mock_langfuse_class.return_value = mock_instance
+
+        try:
+            init_tracing_client(public_key="pk-test", secret_key="sk-test")
+
+            span = SpanContext(name="test", enabled=True)
+            # Should not raise
+            span.start()
+            assert span._span is None
+        finally:
+            shutdown_tracing()
+
+    @patch("src.tracing.client.Langfuse")
+    def test_generation_start_handles_exception(self, mock_langfuse_class):
+        """Test generation start handles exceptions gracefully."""
+        from src.tracing.client import init_tracing_client, shutdown_tracing
+        from src.tracing.context import GenerationContext
+
+        mock_instance = MagicMock()
+        mock_instance.start_as_current_observation.side_effect = Exception("Start error")
+        mock_langfuse_class.return_value = mock_instance
+
+        try:
+            init_tracing_client(public_key="pk-test", secret_key="sk-test")
+
+            gen = GenerationContext(name="test", model="gpt-4", enabled=True)
+            # Should not raise
+            gen.start()
+            assert gen._generation is None
+        finally:
+            shutdown_tracing()

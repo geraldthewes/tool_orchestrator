@@ -14,7 +14,7 @@ python-dotenv>=1.0.0
 typing-extensions>=4.8.0
 
 # Observability
-langfuse>=2.0.0
+langfuse>=3.12.0
 
 # FastAPI server
 fastapi>=0.109.0
