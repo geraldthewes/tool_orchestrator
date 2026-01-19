@@ -67,6 +67,7 @@ async def lifespan(app: FastAPI):
         logger.info(f"  [{delegate.tool_name}] {delegate.display_name}")
         logger.info(f"    URL: {delegate.connection.base_url}")
         logger.info(f"    Model: {delegate.connection.model}")
+        logger.info(f"    Context: {delegate.capabilities.context_length:,} tokens")
         logger.info(f"    Type: {delegate.connection.type.value}")
         logger.info(f"    Timeout: {delegate.defaults.timeout}s")
 
