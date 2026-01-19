@@ -29,6 +29,7 @@ class TracingContext:
     execution_id: str
     session_id: Optional[str] = None
     user_id: Optional[str] = None
+    _context_manager: Any = field(default=None, repr=False)
     _root_span: Any = field(default=None, repr=False)
     _enabled: bool = field(default=False, repr=False)
     _start_time: float = field(default_factory=time.time, repr=False)
@@ -68,16 +69,17 @@ class TracingContext:
                 trace_metadata.update(metadata)
 
             # In v3, create a root span that acts as the trace container
-            self._root_span = client.client.start_as_current_observation(
+            # start_as_current_observation returns a context manager
+            self._context_manager = client.client.start_as_current_observation(
                 as_type="span",
                 name=name,
                 input=input_data,
                 metadata=trace_metadata,
             )
-            # Enter the context manager manually
-            self._root_span.__enter__()
+            # Enter the context manager to get the actual span object
+            self._root_span = self._context_manager.__enter__()
 
-            # Set trace-level attributes
+            # Set trace-level attributes on the span (not the context manager)
             self._root_span.update_trace(
                 user_id=self.user_id,
                 session_id=self.session_id,
@@ -116,8 +118,9 @@ class TracingContext:
                 output=output,
                 metadata=update_metadata,
             )
-            # Exit the context manager
-            self._root_span.__exit__(None, None, None)
+            # Exit the context manager (not the span)
+            if self._context_manager:
+                self._context_manager.__exit__(None, None, None)
         except Exception as e:
             logger.warning(f"Failed to end trace: {e}")
 
@@ -196,6 +199,7 @@ class SpanContext:
     enabled: bool = False
     metadata: Optional[dict] = None
     input: Optional[dict] = None
+    _context_manager: Any = field(default=None, repr=False)
     _span: Any = field(default=None, repr=False)
     _start_time: float = field(default=0.0, repr=False)
     _output: Optional[dict] = field(default=None, repr=False)
@@ -214,14 +218,15 @@ class SpanContext:
             self._start_time = time.time()
 
             # Create span using v3 API - OTEL handles nesting automatically
-            self._span = client.client.start_as_current_observation(
+            # start_as_current_observation returns a context manager
+            self._context_manager = client.client.start_as_current_observation(
                 as_type="span",
                 name=self.name,
                 metadata=self.metadata,
                 input=self.input,
             )
-            # Enter the context manager manually
-            self._span.__enter__()
+            # Enter the context manager to get the actual span object
+            self._span = self._context_manager.__enter__()
         except Exception as e:
             logger.warning(f"Failed to start span '{self.name}': {e}")
             self._span = None
@@ -242,8 +247,9 @@ class SpanContext:
                 update_kwargs["output"] = self._output
 
             self._span.update(**update_kwargs)
-            # Exit the context manager
-            self._span.__exit__(None, None, None)
+            # Exit the context manager (not the span)
+            if self._context_manager:
+                self._context_manager.__exit__(None, None, None)
         except Exception as e:
             logger.warning(f"Failed to end span '{self.name}': {e}")
 
@@ -310,6 +316,7 @@ class GenerationContext:
     input: Optional[Any] = None
     metadata: Optional[dict] = None
     model_parameters: Optional[dict] = None
+    _context_manager: Any = field(default=None, repr=False)
     _generation: Any = field(default=None, repr=False)
     _start_time: float = field(default=0.0, repr=False)
     _output: Optional[str] = field(default=None, repr=False)
@@ -329,7 +336,8 @@ class GenerationContext:
             self._start_time = time.time()
 
             # Create generation using v3 API
-            self._generation = client.client.start_as_current_observation(
+            # start_as_current_observation returns a context manager
+            self._context_manager = client.client.start_as_current_observation(
                 as_type="generation",
                 name=self.name,
                 model=self.model,
@@ -337,8 +345,8 @@ class GenerationContext:
                 metadata=self.metadata,
                 model_parameters=self.model_parameters,
             )
-            # Enter the context manager manually
-            self._generation.__enter__()
+            # Enter the context manager to get the actual generation object
+            self._generation = self._context_manager.__enter__()
         except Exception as e:
             logger.warning(f"Failed to start generation '{self.name}': {e}")
             self._generation = None
@@ -361,8 +369,9 @@ class GenerationContext:
                 update_kwargs["usage"] = self._usage
 
             self._generation.update(**update_kwargs)
-            # Exit the context manager
-            self._generation.__exit__(None, None, None)
+            # Exit the context manager (not the generation)
+            if self._context_manager:
+                self._context_manager.__exit__(None, None, None)
         except Exception as e:
             logger.warning(f"Failed to end generation '{self.name}': {e}")
 

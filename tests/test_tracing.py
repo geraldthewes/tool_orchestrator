@@ -559,6 +559,142 @@ class TestTracingWithMockedLangfuse:
             shutdown_tracing()
 
 
+class TestContextManagerUsage:
+    """Tests that verify context manager is used correctly (span from __enter__)."""
+
+    @patch("src.tracing.client.Langfuse")
+    def test_tracing_context_uses_span_from_enter(self, mock_langfuse_class):
+        """Test TracingContext uses the span returned by __enter__, not the context manager."""
+        from src.tracing.client import init_tracing_client, shutdown_tracing
+        from src.tracing.context import TracingContext
+
+        mock_instance = MagicMock()
+        mock_context_manager = MagicMock()
+        mock_span = MagicMock()
+        mock_context_manager.__enter__ = MagicMock(return_value=mock_span)
+        mock_context_manager.__exit__ = MagicMock(return_value=None)
+        mock_instance.start_as_current_observation.return_value = mock_context_manager
+        mock_langfuse_class.return_value = mock_instance
+
+        try:
+            init_tracing_client(public_key="pk-test", secret_key="sk-test")
+
+            ctx = TracingContext(execution_id="test-123", user_id="user-1")
+            ctx.start_trace(name="test_trace", query="test query")
+
+            # Verify update_trace was called on span, not context manager
+            mock_span.update_trace.assert_called_once_with(
+                user_id="user-1",
+                session_id=None,
+            )
+            # Verify context manager's update_trace was NOT called
+            assert not hasattr(mock_context_manager, 'update_trace') or \
+                not mock_context_manager.update_trace.called
+
+            # End trace and verify __exit__ is called on context manager
+            ctx.end_trace(output="result", status="success")
+            mock_context_manager.__exit__.assert_called_once_with(None, None, None)
+            mock_span.update.assert_called_once()
+        finally:
+            shutdown_tracing()
+
+    @patch("src.tracing.client.Langfuse")
+    def test_span_context_uses_span_from_enter(self, mock_langfuse_class):
+        """Test SpanContext uses the span returned by __enter__, not the context manager."""
+        from src.tracing.client import init_tracing_client, shutdown_tracing
+        from src.tracing.context import SpanContext
+
+        mock_instance = MagicMock()
+        mock_context_manager = MagicMock()
+        mock_span = MagicMock()
+        mock_context_manager.__enter__ = MagicMock(return_value=mock_span)
+        mock_context_manager.__exit__ = MagicMock(return_value=None)
+        mock_instance.start_as_current_observation.return_value = mock_context_manager
+        mock_langfuse_class.return_value = mock_instance
+
+        try:
+            init_tracing_client(public_key="pk-test", secret_key="sk-test")
+
+            span = SpanContext(name="test_span", enabled=True)
+            span.start()
+
+            # Verify _span is set to the result of __enter__, not context manager
+            assert span._span is mock_span
+            assert span._context_manager is mock_context_manager
+
+            # End span and verify update is called on span
+            span.set_output({"result": "test"})
+            span.end()
+
+            mock_span.update.assert_called_once()
+            mock_context_manager.__exit__.assert_called_once_with(None, None, None)
+        finally:
+            shutdown_tracing()
+
+    @patch("src.tracing.client.Langfuse")
+    def test_generation_context_uses_generation_from_enter(self, mock_langfuse_class):
+        """Test GenerationContext uses the generation returned by __enter__, not the context manager."""
+        from src.tracing.client import init_tracing_client, shutdown_tracing
+        from src.tracing.context import GenerationContext
+
+        mock_instance = MagicMock()
+        mock_context_manager = MagicMock()
+        mock_generation = MagicMock()
+        mock_context_manager.__enter__ = MagicMock(return_value=mock_generation)
+        mock_context_manager.__exit__ = MagicMock(return_value=None)
+        mock_instance.start_as_current_observation.return_value = mock_context_manager
+        mock_langfuse_class.return_value = mock_instance
+
+        try:
+            init_tracing_client(public_key="pk-test", secret_key="sk-test")
+
+            gen = GenerationContext(name="test_gen", model="gpt-4", enabled=True)
+            gen.start()
+
+            # Verify _generation is set to the result of __enter__, not context manager
+            assert gen._generation is mock_generation
+            assert gen._context_manager is mock_context_manager
+
+            # End generation and verify update is called on generation
+            gen.set_output("test output")
+            gen.set_usage(prompt_tokens=10, completion_tokens=20)
+            gen.end()
+
+            mock_generation.update.assert_called_once()
+            mock_context_manager.__exit__.assert_called_once_with(None, None, None)
+        finally:
+            shutdown_tracing()
+
+    @patch("src.tracing.client.Langfuse")
+    def test_exit_not_called_on_span_object(self, mock_langfuse_class):
+        """Test that __exit__ is NOT called on the span object itself."""
+        from src.tracing.client import init_tracing_client, shutdown_tracing
+        from src.tracing.context import SpanContext
+
+        mock_instance = MagicMock()
+        mock_context_manager = MagicMock()
+        mock_span = MagicMock()
+        mock_context_manager.__enter__ = MagicMock(return_value=mock_span)
+        mock_context_manager.__exit__ = MagicMock(return_value=None)
+        mock_instance.start_as_current_observation.return_value = mock_context_manager
+        mock_langfuse_class.return_value = mock_instance
+
+        try:
+            init_tracing_client(public_key="pk-test", secret_key="sk-test")
+
+            span = SpanContext(name="test_span", enabled=True)
+            span.start()
+            span.end()
+
+            # __exit__ should be called on context manager, not span
+            mock_context_manager.__exit__.assert_called_once()
+            # If span has __exit__, it should NOT be called
+            if hasattr(mock_span, '__exit__'):
+                mock_span.__exit__.assert_not_called()
+        finally:
+            shutdown_tracing()
+
+
 class TestGracefulDegradation:
     """Tests for graceful degradation on errors."""
 
