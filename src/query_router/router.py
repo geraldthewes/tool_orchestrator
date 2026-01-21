@@ -14,27 +14,32 @@ from ..config_loader import load_delegates_config
 
 logger = logging.getLogger(__name__)
 
-ROUTING_PROMPT_TEMPLATE = """You are a query router. Analyze the user's query and determine if it requires external tools or can be answered directly.
+ROUTING_PROMPT_TEMPLATE = """You are a query router. Analyze the user's query and determine which tool is the most relevant 
+to answer the user query.
 
 Available tools in the system:
 {tools_list}
 
 RULES:
-1. If the query can be answered from your knowledge without tools, respond with your answer directly.
-2. If the query REQUIRES any tool (current info, calculations, code execution, web search), respond EXACTLY with: ROUTE_TO_ORCHESTRATOR
+1. If the query benefits from the use of any tool (current info, calculations, code execution, web search), respond EXACTLY with: ROUTE_TO_ORCHESTRATOR
+2. Only respond to the query without using tools if the answer is simple, short  and obvious and you know the answer. Then you can espond with your answer directly.
 
-Examples of queries you should answer directly:
-- "Hello" → Greet the user
-- "Suggest follow-up questions" → Generate suggestions
-- "What is the capital of France?" → Answer from knowledge
-- "Summarize the conversation" → Summarize
-- "Thanks!" → Acknowledge
+
 
 Examples of queries requiring ROUTE_TO_ORCHESTRATOR:
 - "What's the weather today?" → Needs current info (web search)
 - "Calculate 2^100" → Needs calculation tool
 - "Search for latest news on AI" → Needs web search
 - "Run this Python code" → Needs code execution
+- "Analyze this text" -> Needs and external LLM
+- "Create a poem about cats" _> Needs an external LLM
+
+Examples of simple queries you can answer directly:
+- "Hello" → Greet the user
+- "Suggest follow-up questions" → Generate suggestions
+- "What is the capital of France?" → Answer from knowledge
+- "Thanks!" → Acknowledge
+
 
 User query: {query}
 
