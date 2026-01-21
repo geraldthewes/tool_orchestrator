@@ -9,7 +9,6 @@ import logging
 from openai import OpenAI
 import requests
 
-from ..config import config
 from ..models import ConnectionType, DelegateConnection
 
 logger = logging.getLogger(__name__)
@@ -117,136 +116,6 @@ def _call_ollama(
         }
 
 
-def call_reasoning_llm(
-    prompt: str,
-    temperature: float = 0.7,
-    max_tokens: int = 2048,
-) -> dict:
-    """
-    Call the reasoning LLM for complex reasoning tasks.
-
-    Args:
-        prompt: The task or question
-        temperature: Sampling temperature
-        max_tokens: Maximum response tokens
-
-    Returns:
-        Dictionary with response or error
-    """
-    try:
-        client = OpenAI(base_url=config.delegates.reasoning_llm_url, api_key="dummy")
-        response = client.chat.completions.create(
-            model=config.delegates.reasoning_llm_model,
-            messages=[{"role": "user", "content": prompt}],
-            temperature=temperature,
-            max_tokens=max_tokens,
-        )
-        return {
-            "success": True,
-            "model": "reasoning-llm",
-            "response": response.choices[0].message.content,
-            "error": None,
-        }
-    except Exception as e:
-        logger.error(f"Reasoning LLM call failed: {e}")
-        return {
-            "success": False,
-            "model": "reasoning-llm",
-            "response": None,
-            "error": str(e),
-        }
-
-
-# Alias for backwards compatibility
-call_gpt_oss = call_reasoning_llm
-
-
-def call_coding_llm(
-    prompt: str,
-    temperature: float = 0.3,  # Lower temp for code generation
-    max_tokens: int = 2048,
-) -> dict:
-    """
-    Call the coding LLM for code generation tasks.
-
-    Args:
-        prompt: The coding task or question
-        temperature: Sampling temperature
-        max_tokens: Maximum response tokens
-
-    Returns:
-        Dictionary with response or error
-    """
-    try:
-        client = OpenAI(base_url=config.delegates.coding_llm_url, api_key="dummy")
-        response = client.chat.completions.create(
-            model=config.delegates.coding_llm_model,
-            messages=[{"role": "user", "content": prompt}],
-            temperature=temperature,
-            max_tokens=max_tokens,
-        )
-        return {
-            "success": True,
-            "model": "coding-llm",
-            "response": response.choices[0].message.content,
-            "error": None,
-        }
-    except Exception as e:
-        logger.error(f"Coding LLM call failed: {e}")
-        return {
-            "success": False,
-            "model": "coding-llm",
-            "response": None,
-            "error": str(e),
-        }
-
-
-# Alias for backwards compatibility
-call_qwen_coder = call_coding_llm
-
-
-def call_fast_llm(
-    prompt: str,
-    temperature: float = 0.7,
-) -> dict:
-    """
-    Call the fast LLM for quick reasoning tasks.
-
-    Args:
-        prompt: The task or question
-        temperature: Sampling temperature
-
-    Returns:
-        Dictionary with response or error
-    """
-    try:
-        client = OpenAI(base_url=config.delegates.fast_llm_url, api_key="dummy")
-        response = client.chat.completions.create(
-            model=config.delegates.fast_llm_model,
-            messages=[{"role": "user", "content": prompt}],
-            temperature=temperature,
-            max_tokens=1024,
-        )
-        return {
-            "success": True,
-            "model": "fast-llm",
-            "response": response.choices[0].message.content,
-            "error": None,
-        }
-    except Exception as e:
-        logger.error(f"Fast LLM call failed: {e}")
-        return {
-            "success": False,
-            "model": "fast-llm",
-            "response": None,
-            "error": str(e),
-        }
-
-
-# Alias for backwards compatibility
-call_nemotron_nano = call_fast_llm
-
-
 def format_result_for_llm(delegate_result: dict) -> str:
     """
     Format delegation result for the orchestrator.
@@ -261,3 +130,54 @@ def format_result_for_llm(delegate_result: dict) -> str:
         return f"Delegation to {delegate_result['model']} failed: {delegate_result['error']}"
 
     return f"Response from {delegate_result['model']}:\n\n{delegate_result['response']}"
+
+
+def get_delegate(role: str):
+    """
+    Get a delegate configuration by role name.
+
+    Args:
+        role: The delegate role (e.g., 'fast', 'reasoner', 'coder')
+
+    Returns:
+        DelegateConfig or None if not found
+    """
+    from ..config_loader import load_delegates_config
+
+    delegates_config = load_delegates_config()
+    return delegates_config.delegates.get(role)
+
+
+def call_delegate_by_role(
+    role: str,
+    prompt: str,
+    temperature: float | None = None,
+    max_tokens: int | None = None,
+) -> dict:
+    """
+    Call a delegate LLM by role name.
+
+    Args:
+        role: The delegate role (e.g., 'fast', 'reasoner', 'coder')
+        prompt: The task or question
+        temperature: Sampling temperature (uses delegate default if None)
+        max_tokens: Maximum response tokens (uses delegate default if None)
+
+    Returns:
+        Dictionary with response or error
+    """
+    delegate = get_delegate(role)
+    if delegate is None:
+        return {
+            "success": False,
+            "model": "unknown",
+            "response": None,
+            "error": f"Unknown delegate role: {role}",
+        }
+    return call_delegate(
+        connection=delegate.connection,
+        prompt=prompt,
+        temperature=temperature if temperature is not None else delegate.defaults.temperature,
+        max_tokens=max_tokens if max_tokens is not None else delegate.defaults.max_tokens,
+        timeout=delegate.defaults.timeout,
+    )

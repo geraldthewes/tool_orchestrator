@@ -9,7 +9,7 @@ import logging
 from dataclasses import dataclass
 
 from ..tools.registry import ToolRegistry
-from ..tools.llm_delegate import call_fast_llm
+from ..tools.llm_delegate import call_delegate_by_role
 from ..config_loader import load_delegates_config
 
 logger = logging.getLogger(__name__)
@@ -99,7 +99,7 @@ class QueryRouter:
         prompt = ROUTING_PROMPT_TEMPLATE.format(
             tools_list=self._tools_list, query=query
         )
-        result = call_fast_llm(prompt, temperature=0.3)
+        result = call_delegate_by_role("fast", prompt, temperature=0.3)
 
         if not result["success"]:
             logger.warning(
