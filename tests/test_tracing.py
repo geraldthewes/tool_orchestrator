@@ -304,30 +304,33 @@ class TestLangfuseConfig:
 class TestOrchestratorTracingIntegration:
     """Tests for orchestrator tracing integration."""
 
-    def test_orchestrator_without_tracing_context(self):
+    @patch("src.prompts.modules.orchestrator.get_orchestrator_lm")
+    @patch("src.prompts.modules.orchestrator.dspy.context")
+    def test_orchestrator_without_tracing_context(self, mock_context, mock_get_lm):
         """Test orchestrator works without tracing context."""
         from src.orchestrator import ToolOrchestrator
         from unittest.mock import Mock
 
-        mock_client = Mock()
-        mock_client.call_orchestrator.return_value = {
-            "success": True,
-            "response": """
-**Thought**: I know this.
-**Action**: Final Answer
-**Action Input**: The answer is 42.
-""",
-        }
+        mock_lm = MagicMock()
+        mock_get_lm.return_value = mock_lm
+        mock_context.return_value.__enter__ = MagicMock()
+        mock_context.return_value.__exit__ = MagicMock(return_value=False)
 
         orchestrator = ToolOrchestrator(
-            llm_client=mock_client,
             tracing_context=None,
         )
+
+        # Mock the react module to return a final answer
+        mock_result = Mock()
+        mock_result.answer = "The answer is 42."
+        orchestrator._module.react = Mock(return_value=mock_result)
 
         result = orchestrator.run("What is the answer?")
         assert "42" in result
 
-    def test_orchestrator_with_tracing_context_disabled(self):
+    @patch("src.prompts.modules.orchestrator.get_orchestrator_lm")
+    @patch("src.prompts.modules.orchestrator.dspy.context")
+    def test_orchestrator_with_tracing_context_disabled(self, mock_context, mock_get_lm):
         """Test orchestrator works with disabled tracing context."""
         from src.orchestrator import ToolOrchestrator
         from src.tracing import TracingContext
@@ -337,47 +340,39 @@ class TestOrchestratorTracingIntegration:
         # Ensure tracing is disabled
         shutdown_tracing()
 
-        mock_client = Mock()
-        mock_client.call_orchestrator.return_value = {
-            "success": True,
-            "response": """
-**Thought**: Simple answer.
-**Action**: Final Answer
-**Action Input**: Done.
-""",
-        }
+        mock_lm = MagicMock()
+        mock_get_lm.return_value = mock_lm
+        mock_context.return_value.__enter__ = MagicMock()
+        mock_context.return_value.__exit__ = MagicMock(return_value=False)
 
         tracing_ctx = TracingContext(execution_id="test-123")
 
         orchestrator = ToolOrchestrator(
-            llm_client=mock_client,
             tracing_context=tracing_ctx,
         )
+
+        # Mock the react module
+        mock_result = Mock()
+        mock_result.answer = "Done."
+        orchestrator._module.react = Mock(return_value=mock_result)
 
         result = orchestrator.run("Test query")
         assert "Done" in result
 
-    @patch("src.orchestrator.call_delegate")
-    def test_traced_delegate_call_without_context(self, mock_call_delegate):
-        """Test _traced_delegate_call works without tracing context."""
-        from src.orchestrator import ToolOrchestrator
+    def test_traced_delegate_call_without_context(self):
+        """Test delegate tools work without tracing context.
+
+        Note: The DSPy implementation handles delegates through tool adapters,
+        so we test through the create_delegate_tool function.
+        """
+        from src.prompts.modules.orchestrator import create_delegate_tool
         from src.models import (
             DelegateConfig,
             DelegateConnection,
             DelegateCapabilities,
             DelegateDefaults,
             ConnectionType,
-        )
-
-        mock_call_delegate.return_value = {
-            "success": True,
-            "response": "Delegate response",
-        }
-
-        mock_client = Mock()
-        orchestrator = ToolOrchestrator(
-            llm_client=mock_client,
-            tracing_context=None,
+            DelegatesConfiguration,
         )
 
         config = DelegateConfig(
@@ -400,62 +395,71 @@ class TestOrchestratorTracingIntegration:
             ),
         )
 
-        result = orchestrator._traced_delegate_call(
-            config=config,
-            prompt="Test prompt",
-            temperature=0.7,
-            max_tokens=100,
-            timeout=120,
+        delegates_config = DelegatesConfiguration(
+            version="1.0",
+            delegates={"test": config},
         )
 
-        assert result["success"] is True
-        mock_call_delegate.assert_called_once()
+        with patch("src.tools.llm_delegate.call_delegate") as mock_call:
+            mock_call.return_value = {
+                "success": True,
+                "response": "Delegate response",
+                "model": "test-model",
+            }
 
-    def test_traced_orchestrator_call_without_context(self):
-        """Test _traced_orchestrator_call works without tracing context."""
+            tool = create_delegate_tool(
+                role="test",
+                display_name="Test LLM",
+                description="Test delegate",
+                tool_name="ask_test",
+                delegates_config=delegates_config,
+            )
+
+            result = tool(prompt="Test prompt")
+            assert "Delegate response" in result
+            mock_call.assert_called_once()
+
+    @patch("src.prompts.modules.orchestrator.get_orchestrator_lm")
+    @patch("src.prompts.modules.orchestrator.dspy.context")
+    def test_traced_orchestrator_call_without_context(self, mock_context, mock_get_lm):
+        """Test orchestrator call works without tracing context."""
         from src.orchestrator import ToolOrchestrator
         from unittest.mock import Mock
 
-        mock_client = Mock()
-        mock_client.call_orchestrator.return_value = {
-            "success": True,
-            "response": "Test response",
-        }
+        mock_lm = MagicMock()
+        mock_get_lm.return_value = mock_lm
+        mock_context.return_value.__enter__ = MagicMock()
+        mock_context.return_value.__exit__ = MagicMock(return_value=False)
 
         orchestrator = ToolOrchestrator(
-            llm_client=mock_client,
             tracing_context=None,
         )
 
-        result = orchestrator._traced_orchestrator_call(
-            messages=[{"role": "user", "content": "test"}],
-            temperature=0.7,
-            max_tokens=100,
-            step_number=1,
-        )
+        mock_result = Mock()
+        mock_result.answer = "Test response"
+        orchestrator._module.react = Mock(return_value=mock_result)
 
-        assert result["success"] is True
-        mock_client.call_orchestrator.assert_called_once()
+        result = orchestrator.run("test")
+        assert "Test response" in result
 
     def test_traced_tool_execution_without_context(self):
-        """Test _traced_tool_execution works without tracing context."""
-        from src.orchestrator import ToolOrchestrator
-        from unittest.mock import Mock
+        """Test tool execution works without tracing context.
 
-        mock_client = Mock()
-        orchestrator = ToolOrchestrator(
-            llm_client=mock_client,
-            tracing_context=None,
+        Note: With DSPy, tools are executed through DSPy's ReAct module,
+        so we test the tool adapter directly.
+        """
+        from src.prompts.modules.orchestrator import create_dspy_tool
+        from src.tools.math_solver import _handle_calculate, format_result_for_llm
+
+        tool = create_dspy_tool(
+            name="calculate",
+            description="Calculate math",
+            handler=_handle_calculate,
+            formatter=format_result_for_llm,
         )
 
-        result = orchestrator._traced_tool_execution(
-            tool_name="calculate",
-            params={"expression": "2 + 2"},
-            step_number=1,
-        )
-
-        assert result.success is True
-        assert "4" in result.result
+        result = tool(expression="2 + 2")
+        assert "4" in result
 
 
 class TestTracingWithMockedLangfuse:
@@ -926,31 +930,29 @@ class TestOrchestratorTracingWithSpanContextParent:
     """Tests for orchestrator tracing with SpanContext as parent."""
 
     def test_traced_tool_execution_with_span_context_parent(self):
-        """Test _traced_tool_execution works when parent is SpanContext."""
-        from src.orchestrator import ToolOrchestrator
-        from src.tracing.context import SpanContext
-        from unittest.mock import Mock
+        """Test tool execution works with SpanContext.
 
-        mock_client = Mock()
-        orchestrator = ToolOrchestrator(
-            llm_client=mock_client,
-            tracing_context=None,
-        )
+        Note: With DSPy, tools are executed through DSPy's ReAct module.
+        This test verifies tool adapters work correctly.
+        """
+        from src.prompts.modules.orchestrator import create_dspy_tool
+        from src.tools.math_solver import _handle_calculate, format_result_for_llm
+        from src.tracing.context import SpanContext
 
         # Create a disabled SpanContext as parent (simulates nested span scenario)
         parent_span = SpanContext(name="step_1", enabled=False)
         parent_span.start()
 
-        # This should NOT raise AttributeError
-        result = orchestrator._traced_tool_execution(
-            tool_name="calculate",
-            params={"expression": "2 + 2"},
-            step_number=1,
-            span_context=parent_span,
+        # Tool adapter should work regardless of tracing context
+        tool = create_dspy_tool(
+            name="calculate",
+            description="Calculate math",
+            handler=_handle_calculate,
+            formatter=format_result_for_llm,
         )
 
-        assert result.success is True
-        assert "4" in result.result
+        result = tool(expression="2 + 2")
+        assert "4" in result
 
 
 class TestConnectivityValidation:

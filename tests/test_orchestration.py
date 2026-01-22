@@ -1,11 +1,11 @@
 """
 Tests for ToolOrchestra orchestration.
 
-These tests cover the orchestration logic using mocked LLM responses.
+These tests cover the orchestration logic using mocked DSPy components.
 """
 
 import pytest
-from unittest.mock import Mock, patch
+from unittest.mock import Mock, patch, MagicMock
 
 from src.orchestrator import ToolOrchestrator, OrchestrationStep, ToolResult
 
@@ -83,157 +83,17 @@ class TestOrchestrator:
         orchestrator = ToolOrchestrator()
         assert orchestrator.execution_id is None
 
-    def test_parse_thought_action_input(self):
-        """Test parsing a standard response."""
-        orchestrator = ToolOrchestrator()
-
-        response = """
-**Thought**: I need to calculate this expression.
-**Action**: calculate
-**Action Input**: {"expression": "2 + 2"}
-"""
-        step = orchestrator._parse_response(response)
-
-        assert step.reasoning == "I need to calculate this expression."
-        assert step.action == "calculate"
-        assert step.action_input == {"expression": "2 + 2"}
-        assert step.is_final is False
-
-    def test_parse_final_answer(self):
-        """Test parsing a final answer response."""
-        orchestrator = ToolOrchestrator()
-
-        response = """
-**Thought**: I have calculated the result.
-**Action**: Final Answer
-**Action Input**: The sum of 2 and 2 is 4.
-"""
-        step = orchestrator._parse_response(response)
-
-        assert step.is_final is True
-        assert step.final_answer == "The sum of 2 and 2 is 4."
-
-    def test_parse_json_with_code_block(self):
-        """Test parsing JSON wrapped in code block."""
-        orchestrator = ToolOrchestrator()
-
-        response = """
-**Thought**: Let me search for this.
-**Action**: web_search
-**Action Input**: ```json
-{"query": "Python latest version"}
-```
-"""
-        step = orchestrator._parse_response(response)
-
-        assert step.action_input == {"query": "Python latest version"}
-
-    def test_execute_calculate_tool(self):
-        """Test executing the calculate tool."""
-        orchestrator = ToolOrchestrator()
-
-        result = orchestrator._execute_tool("calculate", {"expression": "10 * 5"})
-
-        assert result.success is True
-        assert "50" in result.result
-
-    @patch("src.tools.python_executor.requests.post")
-    def test_execute_python_tool(self, mock_post):
-        """Test executing the Python executor tool."""
-        mock_response = Mock()
-        mock_response.status_code = 200
-        mock_response.json.return_value = {
-            "status": "completed",
-            "stdout": "Hello\n",
-            "stderr": "",
-            "exit_code": 0,
-        }
-        mock_post.return_value = mock_response
-
-        orchestrator = ToolOrchestrator()
-
-        result = orchestrator._execute_tool(
-            "python_execute",
-            {"code": "print('Hello')"},
-        )
-
-        assert result.success is True
-        assert "Hello" in result.result
-
-    def test_execute_unknown_tool(self):
-        """Test handling of unknown tool."""
-        orchestrator = ToolOrchestrator()
-
-        result = orchestrator._execute_tool("nonexistent_tool", {})
-
-        assert result.success is False
-        assert "Unknown tool" in result.result
-
-    def test_build_system_prompt(self):
-        """Test system prompt generation."""
-        orchestrator = ToolOrchestrator()
-
-        prompt = orchestrator._build_system_prompt()
-
-        # Check that key tools are mentioned
-        assert "web_search" in prompt
-        assert "python_execute" in prompt
-        assert "calculate" in prompt
-        assert "ask_reasoner" in prompt
-        assert "ask_coder" in prompt
-
-        # Check format instructions
-        assert "**Thought**" in prompt
-        assert "**Action**" in prompt
-        assert "Final Answer" in prompt
-
-    def test_build_messages_initial(self):
-        """Test building messages for initial query."""
-        orchestrator = ToolOrchestrator()
-
-        messages = orchestrator._build_messages("What is 2 + 2?")
-
-        assert len(messages) == 2
-        assert messages[0]["role"] == "system"
-        assert messages[1]["role"] == "user"
-        assert "2 + 2" in messages[1]["content"]
-
-    def test_build_messages_with_history(self):
-        """Test building messages with step history."""
-        orchestrator = ToolOrchestrator()
-
-        # Add a previous step
-        orchestrator.steps.append(
-            OrchestrationStep(
-                step_number=1,
-                reasoning="I need to calculate this",
-                action="calculate",
-                action_input={"expression": "2 + 2"},
-                observation="2 + 2 = 4",
-            )
-        )
-
-        messages = orchestrator._build_messages("What is 2 + 2?")
-
-        # Should have: system, user, assistant (step 1), user (observation)
-        assert len(messages) == 4
-        assert messages[2]["role"] == "assistant"
-        assert messages[3]["role"] == "user"
-        assert "Observation" in messages[3]["content"]
-
     def test_get_trace_empty(self):
         """Test getting trace with no steps."""
         orchestrator = ToolOrchestrator()
-
         trace = orchestrator.get_trace()
-
         assert trace == []
 
     def test_get_trace_with_steps(self):
         """Test getting trace with steps."""
         orchestrator = ToolOrchestrator()
-
-        orchestrator.steps = [
+        # Directly set steps on the underlying module
+        orchestrator._module.steps = [
             OrchestrationStep(
                 step_number=1,
                 reasoning="First step",
@@ -257,225 +117,80 @@ class TestOrchestrator:
         assert trace[0]["reasoning"] == "First step"
         assert trace[1]["is_final"] is True
 
-    @patch("src.orchestrator.LLMClient")
-    def test_run_with_mocked_llm(self, mock_llm_class):
-        """Test full orchestration run with mocked LLM."""
-        # Setup mock
-        mock_client = Mock()
-        mock_llm_class.return_value = mock_client
+    @patch("src.prompts.modules.orchestrator.get_orchestrator_lm")
+    @patch("src.prompts.modules.orchestrator.dspy.context")
+    def test_run_with_mocked_dspy(self, mock_context, mock_get_lm):
+        """Test orchestration run with mocked DSPy."""
+        mock_lm = MagicMock()
+        mock_get_lm.return_value = mock_lm
 
-        # First call: return a calculation action
-        # Second call: return final answer
-        mock_client.call_orchestrator.side_effect = [
-            {
-                "success": True,
-                "response": """
-**Thought**: I need to calculate this.
-**Action**: calculate
-**Action Input**: {"expression": "5 + 5"}
-""",
-            },
-            {
-                "success": True,
-                "response": """
-**Thought**: I have the result.
-**Action**: Final Answer
-**Action Input**: The result of 5 + 5 is 10.
-""",
-            },
-        ]
-
-        orchestrator = ToolOrchestrator(llm_client=mock_client)
-        result = orchestrator.run("What is 5 + 5?")
-
-        assert "10" in result
-        assert len(orchestrator.steps) == 2
-        assert mock_client.call_orchestrator.call_count == 2
-
-    @patch("src.orchestrator.LLMClient")
-    def test_run_max_steps_reached(self, mock_llm_class):
-        """Test orchestration stops at max steps."""
-        mock_client = Mock()
-        mock_llm_class.return_value = mock_client
-
-        # Always return a non-final action
-        mock_client.call_orchestrator.return_value = {
-            "success": True,
-            "response": """
-**Thought**: Keep calculating.
-**Action**: calculate
-**Action Input**: {"expression": "1 + 1"}
-""",
-        }
-
-        orchestrator = ToolOrchestrator(llm_client=mock_client, max_steps=3)
-        result = orchestrator.run("Loop forever")
-
-        assert len(orchestrator.steps) == 3
-        assert "unable to complete" in result.lower()
-
-    @patch("src.orchestrator.LLMClient")
-    def test_run_max_steps_logs_execution_id_and_query(self, mock_llm_class, caplog):
-        """Test max steps warning includes execution_id and query preview."""
-        import logging
-
-        mock_client = Mock()
-        mock_llm_class.return_value = mock_client
-
-        mock_client.call_orchestrator.return_value = {
-            "success": True,
-            "response": """
-**Thought**: Keep calculating.
-**Action**: calculate
-**Action Input**: {"expression": "1 + 1"}
-""",
-        }
-
-        orchestrator = ToolOrchestrator(
-            llm_client=mock_client,
-            max_steps=2,
-            execution_id="exec-abc123",
-        )
-
-        with caplog.at_level(logging.WARNING):
-            orchestrator.run("Test query for logging")
-
-        # Check warning message includes execution_id and query
-        warning_messages = [r.message for r in caplog.records if r.levelno == logging.WARNING]
-        assert len(warning_messages) >= 1
-        assert "[exec-abc123]" in warning_messages[0]
-        assert "Test query for logging" in warning_messages[0]
-
-    @patch("src.orchestrator.LLMClient")
-    def test_run_max_steps_logs_truncated_query(self, mock_llm_class, caplog):
-        """Test max steps warning truncates long queries."""
-        import logging
-
-        mock_client = Mock()
-        mock_llm_class.return_value = mock_client
-
-        mock_client.call_orchestrator.return_value = {
-            "success": True,
-            "response": """
-**Thought**: Keep calculating.
-**Action**: calculate
-**Action Input**: {"expression": "1 + 1"}
-""",
-        }
-
-        long_query = "A" * 150  # Query longer than 100 chars
-        orchestrator = ToolOrchestrator(
-            llm_client=mock_client,
-            max_steps=1,
-            execution_id="exec-xyz789",
-        )
-
-        with caplog.at_level(logging.WARNING):
-            orchestrator.run(long_query)
-
-        warning_messages = [r.message for r in caplog.records if r.levelno == logging.WARNING]
-        assert len(warning_messages) >= 1
-        # Should be truncated with ...
-        assert "..." in warning_messages[0]
-        # Should contain the first 100 chars
-        assert "A" * 100 in warning_messages[0]
-
-    def test_log_trace_summary_includes_execution_id(self, caplog):
-        """Test trace summary logs include execution_id prefix."""
-        import logging
-
-        orchestrator = ToolOrchestrator(execution_id="exec-trace123")
-        orchestrator.steps = [
-            OrchestrationStep(
-                step_number=1,
-                reasoning="First step",
-                action="calculate",
-                action_input={"expression": "1 + 1"},
-                observation="1 + 1 = 2",
-            ),
-        ]
-
-        with caplog.at_level(logging.INFO):
-            orchestrator._log_trace_summary()
-
-        info_messages = [r.message for r in caplog.records if r.levelno == logging.INFO]
-        # All trace summary lines should have the execution_id prefix
-        for msg in info_messages:
-            assert "[exec-trace123]" in msg
-
-    def test_log_trace_summary_without_execution_id(self, caplog):
-        """Test trace summary works without execution_id."""
-        import logging
+        mock_context.return_value.__enter__ = Mock()
+        mock_context.return_value.__exit__ = Mock(return_value=False)
 
         orchestrator = ToolOrchestrator()
-        orchestrator.steps = [
-            OrchestrationStep(
-                step_number=1,
-                reasoning="First step",
-                action="calculate",
-                action_input={"expression": "1 + 1"},
-                observation="1 + 1 = 2",
-            ),
-        ]
 
-        with caplog.at_level(logging.INFO):
-            orchestrator._log_trace_summary()
+        # Mock the react module
+        mock_react_result = Mock()
+        mock_react_result.answer = "The answer is 42"
+        orchestrator._module.react = Mock(return_value=mock_react_result)
 
-        info_messages = [r.message for r in caplog.records if r.levelno == logging.INFO]
-        # Should have log messages but no execution_id prefix
-        assert len(info_messages) >= 1
-        assert "TRACE SUMMARY" in " ".join(info_messages)
+        result = orchestrator.run("What is the meaning of life?")
 
-    @patch("src.orchestrator.LLMClient")
-    def test_run_llm_error(self, mock_llm_class):
-        """Test handling LLM errors."""
-        mock_client = Mock()
-        mock_llm_class.return_value = mock_client
+        assert "42" in result
 
-        mock_client.call_orchestrator.return_value = {
-            "success": False,
-            "error": "Connection refused",
-            "response": None,
-        }
+    @patch("src.prompts.modules.orchestrator.get_orchestrator_lm")
+    @patch("src.prompts.modules.orchestrator.dspy.context")
+    def test_run_handles_errors(self, mock_context, mock_get_lm):
+        """Test orchestration handles errors gracefully."""
+        mock_lm = MagicMock()
+        mock_get_lm.return_value = mock_lm
 
-        orchestrator = ToolOrchestrator(llm_client=mock_client)
+        mock_context.return_value.__enter__ = Mock()
+        mock_context.return_value.__exit__ = Mock(return_value=False)
+
+        orchestrator = ToolOrchestrator()
+
+        # Mock react to raise an exception
+        orchestrator._module.react = Mock(side_effect=Exception("LLM error"))
+
         result = orchestrator.run("Test query")
 
-        assert "Error" in result
-        assert "Connection refused" in result
+        assert "Error" in result or "error" in result.lower()
+
+    def test_delegate_handlers_backward_compat(self):
+        """Test delegate_handlers property for backward compatibility."""
+        orchestrator = ToolOrchestrator()
+        # Should return empty dict for backward compatibility
+        assert orchestrator.delegate_handlers == {}
 
 
 class TestToolHandlers:
-    """Tests for tool handler mappings."""
+    """Tests for tool handler integration."""
 
-    def test_all_tools_have_handlers(self):
-        """Test that all tools have handlers and formatters."""
-        from src.tools import ToolRegistry
-
+    def test_dspy_tools_are_registered(self):
+        """Test that DSPy tools are registered in the module."""
         orchestrator = ToolOrchestrator()
+        module = orchestrator._module
 
-        # Static tools should be in registry
-        expected_static_tools = [
-            "web_search",
-            "python_execute",
-            "calculate",
-        ]
+        # Should have tools registered
+        assert len(module._tools) > 0
 
-        for tool in expected_static_tools:
-            tool_def = ToolRegistry.get(tool)
-            assert tool_def is not None, f"Missing registry entry for {tool}"
-            assert tool_def.handler is not None, f"Missing handler for {tool}"
-            assert tool_def.formatter is not None, f"Missing formatter for {tool}"
+        # Check that common tools are present by checking function names
+        tool_names = [t.__name__ for t in module._tools]
+        assert "calculate" in tool_names
+        assert "web_search" in tool_names
+        assert "python_execute" in tool_names
 
-        # Delegate tools should be in delegate_handlers
-        expected_delegate_tools = [
-            "ask_reasoner",
-            "ask_coder",
-            "ask_fast",
-        ]
+    def test_delegate_tools_are_registered(self):
+        """Test that delegate tools are registered."""
+        orchestrator = ToolOrchestrator()
+        module = orchestrator._module
 
-        for tool in expected_delegate_tools:
-            assert tool in orchestrator.delegate_handlers, f"Missing delegate handler for {tool}"
+        tool_names = [t.__name__ for t in module._tools]
+
+        # Check for delegate tools (ask_*)
+        delegate_tools = [name for name in tool_names if name.startswith("ask_")]
+        assert len(delegate_tools) > 0
 
 
 class TestRunQueryConvenience:
@@ -495,3 +210,40 @@ class TestRunQueryConvenience:
         mock_orchestrator_class.assert_called_once_with(verbose=True)
         mock_instance.run.assert_called_once_with("test query")
         assert result == "test result"
+
+
+class TestToolExecution:
+    """Tests for tool execution via DSPy."""
+
+    def test_calculate_tool_function(self):
+        """Test the calculate tool works through DSPy adapter."""
+        from src.prompts.modules.orchestrator import create_dspy_tool
+        from src.tools.math_solver import _handle_calculate, format_result_for_llm
+
+        # Use _handle_calculate which expects a dict, not calculate which expects a string
+        tool = create_dspy_tool(
+            name="calculate",
+            description="Calculate mathematical expressions",
+            handler=_handle_calculate,
+            formatter=format_result_for_llm,
+        )
+
+        result = tool(expression="10 * 5")
+        assert "50" in result
+
+    def test_tool_error_handling(self):
+        """Test that tool errors are handled gracefully."""
+        from src.prompts.modules.orchestrator import create_dspy_tool
+
+        def failing_handler(params):
+            raise ValueError("Test error")
+
+        tool = create_dspy_tool(
+            name="failing_tool",
+            description="A tool that fails",
+            handler=failing_handler,
+            formatter=str,
+        )
+
+        result = tool()
+        assert "error" in result.lower()

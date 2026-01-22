@@ -1,0 +1,15 @@
+{"question": "Calculate 2^10", "answer": "2^10 equals 1024.", "expected_keywords": ["1024"]}
+{"question": "What is the square root of 144?", "answer": "The square root of 144 is 12.", "expected_keywords": ["12"]}
+{"question": "Calculate the factorial of 5", "answer": "5! = 5 × 4 × 3 × 2 × 1 = 120", "expected_keywords": ["120"]}
+{"question": "What is 15% of 200?", "answer": "15% of 200 is 30.", "expected_keywords": ["30"]}
+{"question": "Execute Python code to print numbers 1 to 5", "answer": "The code printed: 1, 2, 3, 4, 5", "expected_keywords": ["1", "2", "3", "4", "5"]}
+{"question": "Run Python: [x**2 for x in range(5)]", "answer": "The list comprehension produces: [0, 1, 4, 9, 16]", "expected_keywords": ["0", "1", "4", "9", "16"]}
+{"question": "Search for Python 3.12 release date", "answer": "Python 3.12 was released on October 2, 2023.", "expected_keywords": ["Python", "3.12", "2023"]}
+{"question": "Find information about the Eiffel Tower", "answer": "The Eiffel Tower is a wrought-iron lattice tower in Paris, France, completed in 1889.", "expected_keywords": ["Eiffel", "Paris", "France"]}
+{"question": "Solve the equation: 2x + 5 = 15", "answer": "Solving 2x + 5 = 15: subtract 5 from both sides to get 2x = 10, then divide by 2 to get x = 5.", "expected_keywords": ["x", "5"]}
+{"question": "Calculate compound interest on $1000 at 5% for 3 years", "answer": "Using the compound interest formula: A = P(1 + r)^t = 1000(1.05)^3 = $1157.63", "expected_keywords": ["1157", "compound"]}
+{"question": "Explain how to implement a binary search algorithm", "answer": "Binary search works by repeatedly dividing the search interval in half. Compare the target with the middle element; if equal, return. If target is smaller, search the left half; if larger, search the right half.", "expected_keywords": ["binary", "search", "middle", "half"]}
+{"question": "What are the main features of Python 3.11?", "answer": "Python 3.11 introduced faster execution, improved error messages with better traceback information, exception groups, and the tomllib module for parsing TOML files.", "expected_keywords": ["Python", "3.11", "faster", "error"]}
+{"question": "Calculate the area of a circle with radius 7", "answer": "The area of a circle is πr². With radius 7: A = π × 7² = π × 49 ≈ 153.94 square units.", "expected_keywords": ["153", "area", "circle"]}
+{"question": "Search for the latest version of React", "answer": "React is a JavaScript library for building user interfaces. The latest stable version information can be found on the official React website.", "expected_keywords": ["React", "JavaScript", "version"]}
+{"question": "Run Python code to reverse a string 'hello'", "answer": "Reversing 'hello' gives 'olleh'.", "expected_keywords": ["olleh"]}

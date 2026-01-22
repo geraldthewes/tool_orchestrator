@@ -1,0 +1,20 @@
+{"query": "Hello", "needs_tools": false, "reasoning": "Simple greeting that can be answered directly", "direct_answer": "Hello! How can I help you today?"}
+{"query": "What is the capital of France?", "needs_tools": false, "reasoning": "Basic factual knowledge that doesn't require tools", "direct_answer": "The capital of France is Paris."}
+{"query": "Thanks!", "needs_tools": false, "reasoning": "Simple acknowledgment", "direct_answer": "You're welcome!"}
+{"query": "Good morning", "needs_tools": false, "reasoning": "Simple greeting", "direct_answer": "Good morning! How can I assist you today?"}
+{"query": "What's 2 + 2?", "needs_tools": false, "reasoning": "Simple arithmetic from knowledge", "direct_answer": "2 + 2 equals 4."}
+{"query": "What's the weather today?", "needs_tools": true, "reasoning": "Requires current weather information via web search", "direct_answer": ""}
+{"query": "Calculate 2^100", "needs_tools": true, "reasoning": "Large calculation requires calculator tool", "direct_answer": ""}
+{"query": "Search for latest news on AI", "needs_tools": true, "reasoning": "Requires web search for current information", "direct_answer": ""}
+{"query": "Run this Python code: print('hello')", "needs_tools": true, "reasoning": "Requires Python execution tool", "direct_answer": ""}
+{"query": "Analyze this text for sentiment", "needs_tools": true, "reasoning": "Requires external LLM for analysis", "direct_answer": ""}
+{"query": "Write a poem about cats", "needs_tools": true, "reasoning": "Requires external LLM for creative writing", "direct_answer": ""}
+{"query": "What is the stock price of Apple?", "needs_tools": true, "reasoning": "Requires current financial data via web search", "direct_answer": ""}
+{"query": "Solve this equation: x^2 + 5x + 6 = 0", "needs_tools": true, "reasoning": "Requires mathematical solving tool", "direct_answer": ""}
+{"query": "What time is it in Tokyo?", "needs_tools": true, "reasoning": "Requires current time information", "direct_answer": ""}
+{"query": "Find information about quantum computing", "needs_tools": true, "reasoning": "Benefits from web search for comprehensive info", "direct_answer": ""}
+{"query": "Convert 100 USD to EUR", "needs_tools": true, "reasoning": "Requires current exchange rate data", "direct_answer": ""}
+{"query": "What is Python?", "needs_tools": false, "reasoning": "Basic factual knowledge about programming language", "direct_answer": "Python is a high-level, interpreted programming language known for its simplicity and readability."}
+{"query": "Explain recursion", "needs_tools": false, "reasoning": "Can explain concept from knowledge", "direct_answer": "Recursion is a programming technique where a function calls itself to solve a problem by breaking it down into smaller subproblems."}
+{"query": "Debug this code: def foo(): return foo()", "needs_tools": true, "reasoning": "Requires code analysis by external LLM", "direct_answer": ""}
+{"query": "Summarize the latest research on climate change", "needs_tools": true, "reasoning": "Requires web search for current research", "direct_answer": ""}

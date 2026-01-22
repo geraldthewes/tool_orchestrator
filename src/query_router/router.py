@@ -1,87 +1,31 @@
 """
-Query Router - LLM-based routing for simple vs complex queries.
+Query Router - DSPy-based routing for simple vs complex queries.
 
 Routes simple queries directly to Fast LLM, bypassing orchestration.
-Uses the tool registry to dynamically build the routing prompt.
+Uses DSPy signatures and modules for declarative prompt programming.
 """
 
 import logging
 from dataclasses import dataclass
+from typing import Optional
 
-from ..tools.registry import ToolRegistry
-from ..tools.llm_delegate import call_delegate_by_role
-from ..config_loader import load_delegates_config
+from ..prompts.modules.router import QueryRouterModule, RoutingResult
 
 logger = logging.getLogger(__name__)
 
-ROUTING_PROMPT_TEMPLATE = """You are a query router. Analyze the user's query and determine which tool is the most relevant 
-to answer the user query.
-
-Available tools in the system:
-{tools_list}
-
-RULES:
-1. If the query benefits from the use of any tool (current info, calculations, code execution, web search), respond EXACTLY with: ROUTE_TO_ORCHESTRATOR
-2. Only respond to the query without using tools if the answer is simple, short  and obvious and you know the answer. Then you can espond with your answer directly.
-
-
-
-Examples of queries requiring ROUTE_TO_ORCHESTRATOR:
-- "What's the weather today?" → Needs current info (web search)
-- "Calculate 2^100" → Needs calculation tool
-- "Search for latest news on AI" → Needs web search
-- "Run this Python code" → Needs code execution
-- "Analyze this text" -> Needs and external LLM
-- "Create a poem about cats" _> Needs an external LLM
-
-Examples of simple queries you can answer directly:
-- "Hello" → Greet the user
-- "Suggest follow-up questions" → Generate suggestions
-- "What is the capital of France?" → Answer from knowledge
-- "Thanks!" → Acknowledge
-
-
-User query: {query}
-
-Your response (either answer directly OR respond with ROUTE_TO_ORCHESTRATOR):"""
-
-
-@dataclass
-class RoutingResult:
-    """Result of query routing decision."""
-
-    needs_orchestration: bool
-    direct_response: str | None
-    reason: str
+# Re-export RoutingResult for backward compatibility
+__all__ = ["QueryRouter", "RoutingResult"]
 
 
 class QueryRouter:
     """
     Routes queries to either direct response or full orchestration.
 
-    Uses Fast LLM to analyze queries and determine if they need tools.
+    Uses DSPy-based QueryRouterModule internally for routing decisions.
     """
 
     def __init__(self):
-        self._tools_list: str | None = None
-
-    def _build_tools_list(self) -> str:
-        """Build tool list from registry + delegates."""
-        lines = []
-
-        # From tool registry (static tools)
-        for name, tool in ToolRegistry.all_tools().items():
-            lines.append(f"- {name}: {tool.description}")
-
-        # From delegates config
-        delegates_config = load_delegates_config()
-        for role, delegate in delegates_config.delegates.items():
-            specs = ", ".join(delegate.capabilities.specializations)
-            lines.append(
-                f"- {delegate.tool_name}: {delegate.description} (Best for: {specs})"
-            )
-
-        return "\n".join(lines)
+        self._module = QueryRouterModule()
 
     def route(self, query: str) -> RoutingResult:
         """
@@ -93,34 +37,4 @@ class QueryRouter:
         Returns:
             RoutingResult with routing decision and optional direct response
         """
-        if self._tools_list is None:
-            self._tools_list = self._build_tools_list()
-
-        prompt = ROUTING_PROMPT_TEMPLATE.format(
-            tools_list=self._tools_list, query=query
-        )
-        result = call_delegate_by_role("fast", prompt, temperature=0.3)
-
-        if not result["success"]:
-            logger.warning(
-                f"Router failed: {result['error']}, defaulting to orchestration"
-            )
-            return RoutingResult(
-                needs_orchestration=True,
-                direct_response=None,
-                reason=f"Router failed: {result['error']}",
-            )
-
-        response = result["response"].strip()
-        if response.startswith("ROUTE_TO_ORCHESTRATOR"):
-            return RoutingResult(
-                needs_orchestration=True,
-                direct_response=None,
-                reason="LLM determined tools required",
-            )
-
-        return RoutingResult(
-            needs_orchestration=False,
-            direct_response=response,
-            reason="LLM answered directly",
-        )
+        return self._module.route(query)

@@ -59,6 +59,12 @@ class FastPathConfig:
 
 
 @dataclass
+class DSPyConfig:
+    """Configuration for DSPy prompt optimization."""
+    optimized_prompts_path: str = os.getenv("DSPY_OPTIMIZED_PROMPTS_PATH", "")
+
+
+@dataclass
 class LangfuseConfig:
     """Configuration for Langfuse observability.
 
@@ -87,6 +93,7 @@ class Config:
     server: ServerConfig
     fast_path: FastPathConfig
     langfuse: LangfuseConfig
+    dspy: DSPyConfig
     log_level: str = os.getenv("LOG_LEVEL", "INFO")
 
 
@@ -99,6 +106,7 @@ def get_config() -> Config:
         server=ServerConfig(),
         fast_path=FastPathConfig(),
         langfuse=LangfuseConfig(),
+        dspy=DSPyConfig(),
     )
 
 
