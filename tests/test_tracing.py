@@ -263,42 +263,52 @@ class TestGenerationContext:
 
 
 class TestLangfuseConfig:
-    """Tests for LangfuseConfig."""
+    """Tests for LangfuseConfig model."""
 
-    def test_config_enabled_with_both_keys(self):
-        """Test config.enabled returns True when both keys set."""
-        import os
-        from importlib import reload
+    def test_is_configured_with_both_keys(self):
+        """Test is_configured returns True when both keys are set."""
+        from src.models.config import LangfuseConfig
 
-        # Set env vars temporarily
-        os.environ["LANGFUSE_PUBLIC_KEY"] = "pk-test"
-        os.environ["LANGFUSE_SECRET_KEY"] = "sk-test"
+        config = LangfuseConfig(
+            enabled=True,
+            public_key="pk-test",
+            secret_key="sk-test",
+        )
 
-        try:
-            import src.config as config_module
+        assert config.is_configured is True
 
-            reload(config_module)
+    def test_is_configured_with_public_key_only(self):
+        """Test is_configured returns False with only public key."""
+        from src.models.config import LangfuseConfig
 
-            assert config_module.LangfuseConfig().enabled is True
-        finally:
-            os.environ.pop("LANGFUSE_PUBLIC_KEY", None)
-            os.environ.pop("LANGFUSE_SECRET_KEY", None)
-            reload(config_module)
+        config = LangfuseConfig(
+            enabled=True,
+            public_key="pk-test",
+            secret_key="",
+        )
 
-    def test_config_disabled_without_keys(self):
-        """Test config.enabled returns False when keys not set."""
-        import os
-        from importlib import reload
+        assert config.is_configured is False
 
-        # Ensure env vars are not set
-        os.environ.pop("LANGFUSE_PUBLIC_KEY", None)
-        os.environ.pop("LANGFUSE_SECRET_KEY", None)
+    def test_is_configured_with_secret_key_only(self):
+        """Test is_configured returns False with only secret key."""
+        from src.models.config import LangfuseConfig
 
-        import src.config as config_module
+        config = LangfuseConfig(
+            enabled=True,
+            public_key="",
+            secret_key="sk-test",
+        )
 
-        reload(config_module)
+        assert config.is_configured is False
 
-        assert config_module.LangfuseConfig().enabled is False
+    def test_is_configured_without_keys(self):
+        """Test is_configured returns False when no keys set."""
+        from src.models.config import LangfuseConfig
+
+        config = LangfuseConfig()
+
+        assert config.is_configured is False
+        assert config.enabled is False
 
 
 class TestOrchestratorTracingIntegration:

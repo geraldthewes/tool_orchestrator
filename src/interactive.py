@@ -13,7 +13,6 @@ import sys
 from typing import Optional
 
 from .config import config
-from .config_loader import load_delegates_config
 from .orchestrator import ToolOrchestrator
 from .llm_call import LLMClient
 
@@ -63,8 +62,7 @@ Delegate LLMs:
 ────────────────────────────────────────────────────────────────""")
 
     # Dynamically load delegate tools from config
-    delegates_config = load_delegates_config()
-    for i, (role, delegate) in enumerate(delegates_config.delegates.items(), start=4):
+    for i, (role, delegate) in enumerate(config.delegates.items(), start=4):
         tool_name = delegate.tool_name.ljust(16)
         print(f"{i}. {tool_name} - {delegate.display_name}")
     print()

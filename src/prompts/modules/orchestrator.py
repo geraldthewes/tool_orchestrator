@@ -15,10 +15,10 @@ from ..signatures import ToolOrchestrationTask
 from ..adapters import get_orchestrator_lm
 from ..adapters.lm_factory import TracedLM
 from ...tools.registry import ToolRegistry
-from ...config_loader import load_delegates_config
+from ...config import config
+from ...config_loader import get_delegates_from_app_config
 from ...models import DelegatesConfiguration
 from ...tracing import TracingContext
-from ...config import config
 
 logger = logging.getLogger(__name__)
 
@@ -222,7 +222,7 @@ class ToolOrchestratorModule(dspy.Module):
         self.steps: list[OrchestrationStep] = []
 
         # Load delegates configuration
-        self.delegates_config = delegates_config or load_delegates_config()
+        self.delegates_config = delegates_config or get_delegates_from_app_config()
 
         # Build DSPy tools list
         self._tools = self._build_dspy_tools()

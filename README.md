@@ -73,13 +73,13 @@ pip install -r requirements.txt
 make install
 ```
 
-### 2. Configure Environment
+### 2. Configure
 
 ```bash
 # Copy template and edit with your LLM endpoints
-cp .env.template .env
+cp config/config.yaml.template config/config.yaml
 
-# Edit .env with your configuration
+# Edit config/config.yaml with your configuration
 ```
 
 ### 3. Start the API Server
@@ -260,30 +260,45 @@ Errors follow the OpenAI error format:
 
 ## Configuration
 
-Configuration is managed through two files:
-
-1. **`.env`** - Environment variables for endpoints, API keys, and runtime settings
-2. **`config/delegates.yaml`** - Delegate LLM definitions (roles, capabilities, connection types)
+All configuration is managed through a single YAML file: `config/config.yaml`
 
 ### Quick Setup
 
 ```bash
 # Copy template and edit with your endpoints
-cp .env.template .env
+cp config/config.yaml.template config/config.yaml
 
-# Edit .env with your LLM endpoints and settings
+# Edit config/config.yaml with your LLM endpoints and settings
 ```
 
-### Configuration Files
+### Configuration Sections
 
-| File | Purpose |
-|------|---------|
-| `.env.template` | Template with all available environment variables and defaults |
-| `config/delegates.yaml` | Delegate LLM configuration (supports `openai_compatible` and `ollama` connection types) |
+| Section | Purpose |
+|---------|---------|
+| `orchestrator` | Main orchestrator LLM endpoint and model |
+| `server` | API server settings (host, port, workers) |
+| `tools` | Tool endpoints (SearXNG, Python executor) |
+| `fast_path` | Fast-path routing for simple queries |
+| `logging` | Log level configuration |
+| `langfuse` | Observability settings |
+| `dspy` | DSPy optimization paths |
+| `delegates` | Delegate LLM definitions |
+
+**Note:** `config/config.yaml` is gitignored as it may contain secrets (API keys).
+
+### Environment Variable Interpolation
+
+The config file supports `${VAR:-default}` syntax for environment variables:
+
+```yaml
+orchestrator:
+  base_url: "${ORCHESTRATOR_BASE_URL:-http://localhost:8001/v1}"
+  model: "${ORCHESTRATOR_MODEL:-nvidia/Nemotron-Orchestrator-8B}"
+```
 
 ### Delegate Connection Types
 
-Delegates in `config/delegates.yaml` support two connection types:
+Delegates support two connection types:
 
 - **`openai_compatible`** - For OpenAI-compatible APIs (vLLM, SGLang, Ollama `/v1`, etc.)
 - **`ollama`** - For native Ollama API (`/api/chat`)
@@ -292,10 +307,21 @@ Example delegate configuration:
 ```yaml
 delegates:
   fast:
+    display_name: "Fast Responder"
     connection:
       type: "openai_compatible"  # or "ollama" for native Ollama API
       base_url: "${FAST_LLM_URL:-http://localhost:11434/v1}"
       model: "${FAST_LLM_MODEL:-llama3}"
+    capabilities:
+      context_length: 8192
+      max_output_tokens: 2048
+      specializations:
+        - "quick_answers"
+    defaults:
+      temperature: 0.7
+      max_tokens: 1024
+      timeout: 120
+    description: "Fast responses for simple queries"
 ```
 
 ## Integration Examples
@@ -569,9 +595,9 @@ tool_orchestrator/
 ├── README.md                    # This file
 ├── Makefile                     # Quick commands
 ├── requirements.txt             # Python dependencies
-├── .env.template                # Environment template
 ├── config/
-│   └── delegates.yaml           # Delegate LLM definitions
+│   ├── config.yaml              # Main configuration (gitignored)
+│   └── config.yaml.template     # Configuration template
 ├── data/
 │   ├── examples/                # DSPy training examples (150+)
 │   └── optimized_prompts/       # Optimized module outputs

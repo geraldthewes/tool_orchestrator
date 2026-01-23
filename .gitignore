@@ -50,6 +50,10 @@ htmlcov/
 .env
 !.env.template
 
+# Configuration (may contain secrets)
+config/config.yaml
+!config/config.yaml.template
+
 # OS
 .DS_Store
 Thumbs.db

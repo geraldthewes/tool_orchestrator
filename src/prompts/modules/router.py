@@ -14,7 +14,7 @@ import dspy
 from ..signatures import QueryRouting
 from ..adapters import get_fast_lm
 from ...tools.registry import ToolRegistry
-from ...config_loader import load_delegates_config
+from ...config import config
 
 logger = logging.getLogger(__name__)
 
@@ -49,8 +49,7 @@ class QueryRouterModule(dspy.Module):
             lines.append(f"- {name}: {tool.description}")
 
         # From delegates config
-        delegates_config = load_delegates_config()
-        for role, delegate in delegates_config.delegates.items():
+        for role, delegate in config.delegates.items():
             specs = ", ".join(delegate.capabilities.specializations)
             lines.append(
                 f"- {delegate.tool_name}: {delegate.description} (Best for: {specs})"

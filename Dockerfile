@@ -4,36 +4,21 @@
 FROM python:3.11-slim
 
 # =============================================================================
-# ENVIRONMENT VARIABLES
+# CONFIGURATION
 # =============================================================================
-# ORCHESTRATOR_BASE_URL   - URL for the orchestrator LLM endpoint
-#                           Default: http://localhost:8001/v1
-# ORCHESTRATOR_MODEL      - Model name for orchestrator
-#                           Default: nvidia/Nemotron-Orchestrator-8B
-# ORCHESTRATOR_TEMPERATURE- Temperature for orchestrator (0.0-2.0)
-#                           Default: 0.7
-# MAX_ORCHESTRATION_STEPS - Maximum ReAct loop iterations
-#                           Default: 10
+# Configuration is loaded from config/config.yaml (or path in CONFIG_PATH env var).
+# The config file supports ${VAR:-default} syntax for environment variable interpolation.
 #
-# DELEGATES_CONFIG_PATH   - Path to delegates.yaml configuration
-#                           Default: config/delegates.yaml
+# To override the config file path:
+#   CONFIG_PATH=/path/to/config.yaml
 #
-# SEARXNG_ENDPOINT        - URL for SearXNG web search
-#                           Default: http://localhost:8080/search
-# PYTHON_EXECUTOR_URL     - URL for remote Python executor service
-#                           Default: http://pyexec.cluster:9999/
-# PYTHON_EXECUTOR_TIMEOUT - Timeout for Python execution (seconds)
-#                           Default: 30
+# Common environment variables that can be interpolated in config:
+#   ORCHESTRATOR_BASE_URL, ORCHESTRATOR_MODEL
+#   REASONING_LLM_BASE_URL, REASONING_LLM_MODEL
+#   CODING_LLM_BASE_URL, CODING_LLM_MODEL
+#   FAST_LLM_URL, FAST_LLM_MODEL
 #
-# SERVER_HOST             - Server bind host
-#                           Default: 0.0.0.0
-# SERVER_PORT             - Server port
-#                           Default: 8000
-# SERVER_WORKERS          - Number of uvicorn workers
-#                           Default: 1
-#
-# LOG_LEVEL               - Logging level (DEBUG, INFO, WARNING, ERROR)
-#                           Default: INFO
+# See config/config.yaml.template for full configuration options.
 # =============================================================================
 
 WORKDIR /app

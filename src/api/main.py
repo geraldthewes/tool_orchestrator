@@ -24,7 +24,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from ..config import config
-from ..config_loader import load_delegates_config
 from ..tools.registry import ToolRegistry
 from ..tracing import init_tracing_client, shutdown_tracing
 from .routes import health, chat
@@ -62,8 +61,7 @@ async def lifespan(app: FastAPI):
     # Log delegate LLMs
     logger.info("-" * 60)
     logger.info("DELEGATE LLMS")
-    delegates_config = load_delegates_config()
-    for role, delegate in delegates_config.delegates.items():
+    for role, delegate in config.delegates.items():
         logger.info(f"  [{delegate.tool_name}] {delegate.display_name}")
         logger.info(f"    URL: {delegate.connection.base_url}")
         logger.info(f"    Model: {delegate.connection.model}")

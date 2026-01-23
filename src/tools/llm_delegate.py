@@ -142,10 +142,9 @@ def get_delegate(role: str):
     Returns:
         DelegateConfig or None if not found
     """
-    from ..config_loader import load_delegates_config
+    from ..config import config
 
-    delegates_config = load_delegates_config()
-    return delegates_config.delegates.get(role)
+    return config.delegates.get(role)
 
 
 def call_delegate_by_role(

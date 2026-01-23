@@ -77,13 +77,13 @@ nomad job status tool-orchestrator
 
 - **`src/llm_call.py`**: LLM client wrapper for OpenAI-compatible endpoints used by the orchestrator.
 
-- **`src/config.py`**: Environment-based configuration using dataclasses. All settings come from environment variables with defaults.
+- **`src/config.py`**: Configuration management. Loads unified config from `config/config.yaml`.
 
-- **`src/config_loader.py`**: YAML configuration loader for delegate LLMs. Supports `${VAR:-default}` syntax for environment variable interpolation.
+- **`src/config_loader.py`**: YAML configuration loader. Supports `${VAR:-default}` syntax for environment variable interpolation.
 
 ### Delegate System
 
-Delegate LLMs are configured in `config/delegates.yaml`. Each delegate:
+Delegate LLMs are configured in the `delegates` section of `config/config.yaml`. Each delegate:
 - Has a role (e.g., `reasoner`, `coder`, `fast`)
 - Becomes a tool named `ask_{role}` (e.g., `ask_reasoner`)
 - Specifies connection details, capabilities, and defaults
@@ -106,19 +106,26 @@ FastAPI server providing OpenAI-compatible REST endpoints:
 
 ## Configuration
 
-Copy `.env.template` to `.env` and configure:
+All configuration is in a single YAML file: `config/config.yaml`
 
-**Required:**
-- `ORCHESTRATOR_BASE_URL`: Main orchestrator LLM endpoint
-- `ORCHESTRATOR_MODEL`: Orchestrator model name
+```bash
+# Copy template and configure
+cp config/config.yaml.template config/config.yaml
+```
 
-**Delegate LLMs:** Configured via `config/delegates.yaml` with env var overrides:
-- `REASONING_LLM_BASE_URL`, `REASONING_LLM_MODEL`
-- `CODING_LLM_BASE_URL`, `CODING_LLM_MODEL`
-- `FAST_LLM_URL`, `FAST_LLM_MODEL`
+The config file supports environment variable interpolation with `${VAR:-default}` syntax.
 
-**Tools:**
-- `SEARXNG_ENDPOINT`: SearXNG web search endpoint
+**Key sections:**
+- `orchestrator`: Main orchestrator LLM endpoint and model
+- `server`: API server settings (host, port, workers)
+- `tools`: SearXNG endpoint and Python executor settings
+- `fast_path`: Fast-path routing for simple queries
+- `logging`: Log level configuration
+- `langfuse`: Observability settings
+- `dspy`: DSPy optimization paths
+- `delegates`: Delegate LLM definitions (reasoner, coder, fast)
+
+**Note:** `config/config.yaml` is gitignored as it may contain secrets.
 
 ## Testing
 

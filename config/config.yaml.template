@@ -1,0 +1,152 @@
+# ToolOrchestra Configuration
+# ===========================
+#
+# Copy this file to config/config.yaml and update values as needed.
+# Environment variables are supported with ${VAR:-default} syntax.
+#
+# IMPORTANT: config/config.yaml may contain secrets (API keys).
+# It is gitignored - do not commit it to version control.
+
+version: "1.0"
+
+# =============================================================================
+# ORCHESTRATOR MODEL
+# =============================================================================
+# The main orchestrator LLM endpoint (vLLM/SGLang/any OpenAI-compatible)
+
+orchestrator:
+  base_url: "http://localhost:8001/v1"
+  model: "nvidia/Nemotron-Orchestrator-8B"
+  temperature: 0.7
+  max_steps: 10
+
+# =============================================================================
+# API SERVER
+# =============================================================================
+
+server:
+  host: "0.0.0.0"
+  port: 8000
+  workers: 1
+  reload: false  # Enable auto-reload for development
+
+# =============================================================================
+# TOOLS
+# =============================================================================
+
+tools:
+  # SearXNG Web Search (local instance or any SearXNG endpoint)
+  searxng_endpoint: "http://localhost:8080/search"
+
+  # Remote Python Executor (sandboxed code execution service)
+  python_executor:
+    url: "http://pyexec.cluster:9999/"
+    timeout: 30
+
+# =============================================================================
+# RUNTIME SETTINGS
+# =============================================================================
+
+# Fast-path routing for simple queries (bypass orchestration for simple queries)
+# When enabled, simple queries like "hello" or "suggest follow-up questions"
+# are routed directly to Fast LLM instead of going through the full ReAct loop
+fast_path:
+  enabled: true
+
+# Logging level (DEBUG, INFO, WARNING, ERROR)
+logging:
+  level: "INFO"
+
+# =============================================================================
+# LANGFUSE OBSERVABILITY
+# =============================================================================
+# Tracing enables when both keys are provided.
+# Get keys from https://cloud.langfuse.com or your self-hosted instance.
+
+langfuse:
+  enabled: false
+  public_key: ""
+  secret_key: ""
+  host: "https://cloud.langfuse.com"  # Or your self-hosted URL with protocol and port
+  flush_at: 10
+  flush_interval: 1.0
+  debug: false
+  output_max_length: 0  # 0 = unlimited
+
+# =============================================================================
+# DSPY OPTIMIZATION
+# =============================================================================
+# Path to load optimized DSPy prompts from (optional)
+# When set, DSPy modules will load optimized prompts from this path
+
+dspy:
+  optimized_prompts_path: ""
+
+# =============================================================================
+# DELEGATE LLMs
+# =============================================================================
+# Each delegate becomes a tool named "ask_{role}" (e.g., ask_reasoner).
+# Environment variables are supported with ${VAR:-default} syntax.
+
+delegates:
+  reasoner:
+    display_name: "Reasoning Expert"
+    connection:
+      type: "openai_compatible"
+      base_url: "${REASONING_LLM_BASE_URL:-http://gx10-d8ce.cluster:8000/v1}"
+      model: "${REASONING_LLM_MODEL:-gpt-oss-120b}"
+      # api_key: ""  # Optional, for authenticated endpoints
+    capabilities:
+      context_length: 32768
+      max_output_tokens: 4096
+      specializations:
+        - "complex_reasoning"
+        - "multi_step_analysis"
+        - "detailed_explanations"
+        - "research_synthesis"
+    defaults:
+      temperature: 0.7
+      max_tokens: 2048
+      timeout: 600  # 10 minutes for complex reasoning
+    description: "Delegate complex reasoning tasks requiring deep analysis, multi-step thinking, or synthesis of multiple concepts."
+
+  coder:
+    display_name: "Coding Expert"
+    connection:
+      type: "openai_compatible"
+      base_url: "${CODING_LLM_BASE_URL:-http://localhost:8000/v1}"
+      model: "${CODING_LLM_MODEL:-qwen3-coder}"
+    capabilities:
+      context_length: 131072
+      max_output_tokens: 8192
+      specializations:
+        - "code_generation"
+        - "debugging"
+        - "code_review"
+        - "refactoring"
+        - "technical_documentation"
+    defaults:
+      temperature: 0.3
+      max_tokens: 2048
+      timeout: 300  # 5 minutes for code generation
+    description: "Delegate coding tasks including code generation, debugging, code review, and technical implementations."
+
+  fast:
+    display_name: "Fast Responder"
+    connection:
+      type: "openai_compatible"
+      base_url: "${FAST_LLM_URL:-http://localhost:11434/v1}"
+      model: "${FAST_LLM_MODEL:-nemotron-3-nano}"
+    capabilities:
+      context_length: 8192
+      max_output_tokens: 2048
+      specializations:
+        - "quick_answers"
+        - "simple_reasoning"
+        - "summarization"
+        - "classification"
+    defaults:
+      temperature: 0.7
+      max_tokens: 1024
+      timeout: 120  # 2 minutes for quick responses
+    description: "Delegate simple tasks requiring fast responses. Good for quick reasoning, simple Q&A, and time-sensitive queries."

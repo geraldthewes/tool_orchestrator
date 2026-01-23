@@ -14,7 +14,8 @@ from .prompts.modules.orchestrator import (
     ToolResult,
     OrchestrationStep,
 )
-from .config_loader import load_delegates_config
+from .config import config
+from .config_loader import get_delegates_from_app_config
 from .models import DelegatesConfiguration
 from .tracing import TracingContext
 
@@ -66,7 +67,7 @@ class ToolOrchestrator:
         self.tracing_context = tracing_context
 
         # Load delegates configuration
-        self.delegates_config = delegates_config or load_delegates_config()
+        self.delegates_config = delegates_config or get_delegates_from_app_config()
 
         # Create the DSPy-based orchestrator module
         self._module = ToolOrchestratorModule(

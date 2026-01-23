@@ -11,7 +11,7 @@ from typing import Any, Optional
 import dspy
 
 from ...config import config
-from ...config_loader import load_delegates_config
+from ...config_loader import get_delegates_from_app_config
 from ...models import DelegatesConfiguration
 from ...tracing import TracingContext
 
@@ -25,7 +25,7 @@ def _get_delegates_config() -> DelegatesConfiguration:
     """Get or load the delegates configuration (cached)."""
     global _delegates_config
     if _delegates_config is None:
-        _delegates_config = load_delegates_config()
+        _delegates_config = get_delegates_from_app_config()
     return _delegates_config
 
 
