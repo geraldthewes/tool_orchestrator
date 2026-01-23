@@ -280,14 +280,19 @@ class ToolOrchestratorModule(dspy.Module):
         self.steps = []
         logger.debug(f"Starting orchestration for: {question}")
 
-        # Configure DSPy with orchestrator LM
-        orchestrator_lm = get_orchestrator_lm()
-
-        # Wrap with tracing if available
-        if self.tracing_context:
-            orchestrator_lm = TracedLM(
-                orchestrator_lm, self.tracing_context, "orchestrator"
-            )
+        # Use existing LM from context if available (e.g., during optimization)
+        # Otherwise, create the default orchestrator LM
+        current_lm = dspy.settings.lm
+        if current_lm is not None:
+            logger.debug("Using LM from DSPy context")
+            orchestrator_lm = current_lm
+        else:
+            orchestrator_lm = get_orchestrator_lm()
+            # Wrap with tracing if available (only for newly created LM)
+            if self.tracing_context:
+                orchestrator_lm = TracedLM(
+                    orchestrator_lm, self.tracing_context, "orchestrator"
+                )
 
         try:
             with dspy.context(lm=orchestrator_lm):
