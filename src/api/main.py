@@ -1,5 +1,5 @@
 """
-FastAPI application for ToolOrchestrator.
+FastAPI application for Tool Orchestrator.
 
 Provides an OpenAI-compatible REST API that exposes the orchestration
 engine to tools like OpenWebUI.
@@ -48,7 +48,7 @@ logger = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan handler for startup and shutdown events."""
-    logger.info("Starting ToolOrchestrator API server")
+    logger.info("Starting Tool Orchestrator API server")
 
     # Log orchestrator configuration
     logger.info("=" * 60)
@@ -83,7 +83,9 @@ async def lifespan(app: FastAPI):
 
     # Log fast-path status
     logger.info("-" * 60)
-    logger.info(f"FAST-PATH ROUTING: {'ENABLED' if config.fast_path.enabled else 'DISABLED'}")
+    logger.info(
+        f"FAST-PATH ROUTING: {'ENABLED' if config.fast_path.enabled else 'DISABLED'}"
+    )
 
     # Initialize Langfuse tracing
     logger.info("-" * 60)
@@ -95,10 +97,10 @@ async def lifespan(app: FastAPI):
         debug=config.langfuse.debug,
     )
     if tracing_client.enabled:
-        logger.info(f"  Status: ENABLED")
+        logger.info("  Status: ENABLED")
         logger.info(f"  Host: {config.langfuse.host or 'https://cloud.langfuse.com'}")
     else:
-        logger.info(f"  Status: DISABLED")
+        logger.info("  Status: DISABLED")
         if tracing_client.error:
             logger.info(f"  Reason: {tracing_client.error}")
 
@@ -107,7 +109,7 @@ async def lifespan(app: FastAPI):
     yield
 
     # Shutdown tracing
-    logger.info("Shutting down ToolOrchestrator API server")
+    logger.info("Shutting down Tool Orchestrator API server")
     shutdown_tracing()
     logger.info("Tracing client shutdown complete")
 
@@ -120,7 +122,7 @@ def create_app() -> FastAPI:
         Configured FastAPI application instance.
     """
     app = FastAPI(
-        title="ToolOrchestrator API",
+        title="Tool Orchestrator API",
         description=(
             "OpenAI-compatible REST API for LLM orchestration with tools and delegates. "
             "Use this server with OpenWebUI or any OpenAI-compatible client by pointing "

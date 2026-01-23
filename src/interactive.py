@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-ToolOrchestra Interactive CLI
+Tool Orchestrator Interactive CLI
 
 A command-line interface for testing LLM orchestration
 with tools and delegate LLMs.
@@ -10,7 +10,6 @@ import argparse
 import json
 import logging
 import sys
-from typing import Optional
 
 from .config import config
 from .orchestrator import ToolOrchestrator
@@ -31,7 +30,7 @@ def print_banner() -> None:
     """Print the welcome banner."""
     banner = """
 ╔════════════════════════════════════════════════════════════════╗
-║                    ToolOrchestra Interactive                    ║
+║                  Tool Orchestrator Interactive                  ║
 ║                                                                 ║
 ║  ReAct-style LLM orchestration with tools and delegates        ║
 ╚════════════════════════════════════════════════════════════════╝
@@ -51,7 +50,8 @@ Type your questions or tasks below.
 
 def print_tools() -> None:
     """Print available tools."""
-    print("""
+    print(
+        """
 Available Tools:
 ────────────────────────────────────────────────────────────────
 1. web_search      - Search the web via SearXNG
@@ -59,7 +59,8 @@ Available Tools:
 3. calculate       - Evaluate mathematical expressions
 
 Delegate LLMs:
-────────────────────────────────────────────────────────────────""")
+────────────────────────────────────────────────────────────────"""
+    )
 
     # Dynamically load delegate tools from config
     for i, (role, delegate) in enumerate(config.delegates.items(), start=4):
@@ -104,7 +105,7 @@ def print_trace(orchestrator: ToolOrchestrator) -> None:
 
 
 class InteractiveCLI:
-    """Interactive CLI for ToolOrchestra."""
+    """Interactive CLI for Tool Orchestrator."""
 
     def __init__(self, verbose: bool = False):
         """Initialize the CLI."""
@@ -151,6 +152,7 @@ class InteractiveCLI:
             print(f"\nError: {e}\n")
             if self.verbose:
                 import traceback
+
                 traceback.print_exc()
 
     def run(self) -> None:
@@ -199,7 +201,7 @@ class InteractiveCLI:
 def main() -> None:
     """Main entry point."""
     parser = argparse.ArgumentParser(
-        description="ToolOrchestra Interactive CLI",
+        description="Tool Orchestrator Interactive CLI",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
@@ -212,13 +214,15 @@ Use /tools in interactive mode to see available tools and delegates.
     )
 
     parser.add_argument(
-        "-v", "--verbose",
+        "-v",
+        "--verbose",
         action="store_true",
         help="Enable verbose logging",
     )
 
     parser.add_argument(
-        "-q", "--query",
+        "-q",
+        "--query",
         type=str,
         help="Run a single query and exit",
     )

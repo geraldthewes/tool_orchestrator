@@ -1,22 +1,50 @@
-# ToolOrchestra
+# Tool Orchestrator
 
-An OpenAI-compatible API service for LLM tool orchestration using ReAct-style reasoning.
+**Open-source LLM tool orchestration framework with OpenAI-compatible API and DSPy optimization**
 
-## Overview
+[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![OpenAI Compatible](https://img.shields.io/badge/OpenAI-Compatible-green.svg)](https://platform.openai.com/docs/api-reference)
 
-ToolOrchestra provides an OpenAI-compatible REST API that orchestrates LLM tool calls and reasoning. It works as a drop-in replacement for OpenAI endpoints with any compatible client library, including OpenWebUI, LiteLLM, and the OpenAI Python SDK.
+A Python framework for LLM orchestration using ReAct-style reasoning (Reason -> Action -> Observation). Works as a drop-in replacement for OpenAI endpoints with built-in web search, Python execution, multi-LLM delegation, and automatic prompt optimization via DSPy.
+
+## What is Tool Orchestrator?
+
+Tool Orchestrator is an open-source LLM orchestration framework that provides an OpenAI-compatible REST API for AI agent workflows. It works as a self-hosted OpenAI alternative, enabling ReAct-style tool orchestration with any compatible client library, including OpenWebUI, LiteLLM, and the OpenAI Python SDK.
+
+Unlike frameworks like LangChain or LlamaIndex that require custom integration code, Tool Orchestrator exposes a standard `/v1/chat/completions` endpoint—point any OpenAI client at it and it just works.
 
 **Key Features:**
 - **OpenAI-compatible API** - Point any OpenAI client at `/v1` and it just works
 - **ReAct orchestration** - Reason -> Action -> Observation -> Repeat until final answer
 - **Tool integration** - Web search (SearXNG), Python execution, math calculations
 - **Delegate LLMs** - Route specialized tasks to reasoning, coding, or fast-response models
+- **DSPy prompt optimization** - Automatic prompt tuning with GEPA optimization for improved accuracy
 - **Streaming support** - Server-sent events for real-time responses
 - **Observability** - Optional Langfuse tracing for request lifecycle monitoring
 
 The service also includes an interactive CLI for development and testing.
 
-## Architecture
+## Why Tool Orchestrator?
+
+### Comparison with Other LLM Frameworks
+
+| Feature | Tool Orchestrator | LangChain | LlamaIndex | AutoGen |
+|---------|-------------------|-----------|------------|---------|
+| OpenAI-compatible API | **Yes** | No | No | No |
+| Drop-in replacement | **Yes** | No | No | No |
+| ReAct reasoning | **Yes** | Yes | Limited | Yes |
+| Multi-LLM delegation | **Yes** | Yes | Yes | Yes |
+| Built-in web search | **Yes** | Requires setup | Requires setup | No |
+| DSPy optimization | **Yes** | No | No | No |
+
+**Ideal for:**
+- Teams wanting OpenAI-compatible endpoints without vendor lock-in
+- Projects needing ReAct-style tool orchestration with minimal setup
+- Developers who want to leverage multiple specialized LLMs
+- Applications requiring automatic prompt optimization via DSPy
+
+## Architecture: How LLM Tool Orchestration Works
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
@@ -26,7 +54,7 @@ The service also includes an interactive CLI for development and testing.
                                 │
                                 ▼
 ┌─────────────────────────────────────────────────────────────────────┐
-│                     ToolOrchestra API Server                        │
+│                    Tool Orchestrator API Server                     │
 │                   (OpenAI-compatible /v1 endpoint)                  │
 ├─────────────────────────────────────────────────────────────────────┤
 │                        Query Router                                 │
@@ -58,7 +86,7 @@ The service also includes an interactive CLI for development and testing.
 - Optional: SearXNG instance for web search
 - Optional: Ollama for local LLM inference
 
-## Quick Start
+## Quick Start: Set Up Your LLM Orchestrator
 
 ### 1. Install Dependencies
 
@@ -375,7 +403,7 @@ from openai import OpenAI
 
 client = OpenAI(
     base_url="http://localhost:8000/v1",
-    api_key="not-needed",  # ToolOrchestra doesn't require API keys
+    api_key="not-needed",  # Tool Orchestrator doesn't require API keys
 )
 
 response = client.chat.completions.create(
@@ -433,7 +461,7 @@ async function main() {
 main();
 ```
 
-## Tools Reference
+## Tools Reference: LLM Tool Calling
 
 ### Built-in Tools
 
@@ -527,7 +555,7 @@ pytest tests/test_orchestration.py -v
 
 ### Prompt Optimization
 
-ToolOrchestra uses [DSPy](https://dspy.ai/) for declarative prompt programming. The project includes 150+ training examples and supports automatic prompt optimization using GEPA (Genetic-Pareto optimization).
+Tool Orchestrator uses [DSPy](https://dspy.ai/) for declarative prompt programming. The project includes 150+ training examples and supports automatic prompt optimization using GEPA (Genetic-Pareto optimization).
 
 **Why GEPA?**
 
@@ -701,8 +729,18 @@ Check SearXNG service:
 curl "$SEARXNG_ENDPOINT?q=test&format=json"
 ```
 
+## Contributing
+
+Contributions welcome! Please submit issues, feature requests, or pull requests.
+
+If you find Tool Orchestrator useful, please consider giving it a star on GitHub.
+
+[![GitHub stars](https://img.shields.io/github/stars/geraldthewes/tool_orchestrator?style=social)](https://github.com/geraldthewes/tool_orchestrator)
+
 ## References
 
+- [Tool Orchestrator on GitHub](https://github.com/geraldthewes/tool_orchestrator)
 - [ReAct: Synergizing Reasoning and Acting](https://react-lm.github.io/)
 - [Nemotron-Orchestrator-8B on Hugging Face](https://huggingface.co/nvidia/Nemotron-Orchestrator-8B)
 - [OpenAI Chat Completions API](https://platform.openai.com/docs/api-reference/chat)
+- [DSPy Documentation](https://dspy.ai/)

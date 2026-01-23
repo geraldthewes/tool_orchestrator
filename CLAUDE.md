@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-ToolOrchestra is a Python framework for LLM tool orchestration using ReAct-style reasoning (Reason -> Action -> Observation -> Repeat). It enables an orchestrator LLM to coordinate tools (web search, Python execution, math calculations) and delegate tasks to specialized LLMs.
+Tool Orchestrator is a Python framework for LLM tool orchestration using ReAct-style reasoning (Reason -> Action -> Observation -> Repeat). It enables an orchestrator LLM to coordinate tools (web search, Python execution, math calculations) and delegate tasks to specialized LLMs.
 
 ## Common Commands
 
