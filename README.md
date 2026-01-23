@@ -289,7 +289,7 @@ Delegate LLMs are configured via `config/delegates.yaml`. Environment variable o
 | `REASONING_LLM_MODEL` | `openai/gpt-oss-120b` | Reasoning model name |
 | `CODING_LLM_BASE_URL` | `http://localhost:8000/v1` | Code generation LLM |
 | `CODING_LLM_MODEL` | `qwen3-coder` | Coding model name |
-| `FAST_LLM_URL` | `http://localhost:11434/api/chat` | Fast reasoning LLM (Ollama) |
+| `FAST_LLM_URL` | `http://localhost:11434/v1` | Fast reasoning LLM (Ollama, OpenAI-compatible) |
 | `FAST_LLM_MODEL` | `nemotron-3-nano` | Fast model name |
 
 ### Fast-Path Routing
