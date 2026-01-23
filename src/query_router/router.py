@@ -6,8 +6,6 @@ Uses DSPy signatures and modules for declarative prompt programming.
 """
 
 import logging
-from dataclasses import dataclass
-from typing import Optional
 
 from ..prompts.modules.router import QueryRouterModule, RoutingResult
 

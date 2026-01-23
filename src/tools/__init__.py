@@ -9,7 +9,10 @@ Available tools:
 """
 
 from .search import search, format_results_for_llm as format_search_results
-from .python_executor import execute_python, format_result_for_llm as format_python_result
+from .python_executor import (
+    execute_python,
+    format_result_for_llm as format_python_result,
+)
 from .math_solver import calculate, format_result_for_llm as format_math_result
 from .llm_delegate import (
     call_delegate,

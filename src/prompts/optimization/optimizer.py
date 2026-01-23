@@ -296,11 +296,11 @@ class PromptOptimizer:
             module: Optimized module to save
             path: Path to save to (JSON file)
         """
-        path = Path(path)
-        path.parent.mkdir(parents=True, exist_ok=True)
+        save_path = Path(path)
+        save_path.parent.mkdir(parents=True, exist_ok=True)
 
-        module.save(str(path))
-        logger.info(f"Saved optimized module to {path}")
+        module.save(str(save_path))
+        logger.info(f"Saved optimized module to {save_path}")
 
     @staticmethod
     def load(module: dspy.Module, path: str) -> dspy.Module:
@@ -314,12 +314,12 @@ class PromptOptimizer:
         Returns:
             Module with loaded weights
         """
-        path = Path(path)
-        if not path.exists():
-            raise FileNotFoundError(f"Optimized module not found: {path}")
+        load_path = Path(path)
+        if not load_path.exists():
+            raise FileNotFoundError(f"Optimized module not found: {load_path}")
 
-        module.load(str(path))
-        logger.info(f"Loaded optimized module from {path}")
+        module.load(str(load_path))
+        logger.info(f"Loaded optimized module from {load_path}")
         return module
 
 

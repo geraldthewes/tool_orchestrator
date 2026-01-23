@@ -42,7 +42,7 @@ class LLMClient:
         try:
             response = self.orchestrator_client.chat.completions.create(
                 model=self.orchestrator_model,
-                messages=messages,
+                messages=messages,  # type: ignore[arg-type]
                 temperature=temperature,
                 max_tokens=max_tokens,
             )
@@ -76,7 +76,7 @@ class LLMClient:
                 temperature=temperature,
                 max_tokens=max_tokens,
             )
-            return response.choices[0].message.content
+            return response.choices[0].message.content or ""
         except Exception as e:
             logger.error(f"OpenAI-compatible call to {base_url} failed: {e}")
             raise

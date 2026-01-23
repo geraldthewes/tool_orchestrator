@@ -4,9 +4,6 @@ Tests for DSPy Signatures.
 Tests the signature field definitions and types.
 """
 
-import pytest
-import dspy
-
 from src.prompts.signatures import QueryRouting, ToolOrchestrationTask
 
 

@@ -6,7 +6,6 @@ to coordinate tools and delegate LLMs.
 """
 
 import logging
-from dataclasses import dataclass, field
 from typing import Optional
 
 from .prompts.modules.orchestrator import (
@@ -14,7 +13,6 @@ from .prompts.modules.orchestrator import (
     ToolResult,
     OrchestrationStep,
 )
-from .config import config
 from .config_loader import get_delegates_from_app_config
 from .models import DelegatesConfiguration
 from .tracing import TracingContext
@@ -82,6 +80,21 @@ class ToolOrchestrator:
     def steps(self) -> list[OrchestrationStep]:
         """Get the orchestration steps from the underlying module."""
         return self._module.steps
+
+    @steps.setter
+    def steps(self, value: list[OrchestrationStep]) -> None:
+        """Set the orchestration steps on the underlying module."""
+        self._module.steps = value
+
+    @property
+    def llm_client(self):
+        """Backward compatibility property - returns None as LLM is now managed by DSPy."""
+        return None
+
+    @llm_client.setter
+    def llm_client(self, value) -> None:
+        """Backward compatibility setter - ignored as LLM is now managed by DSPy."""
+        pass  # Ignored for backward compatibility
 
     @property
     def delegate_handlers(self) -> dict:

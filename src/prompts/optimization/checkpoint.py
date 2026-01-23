@@ -118,7 +118,7 @@ class CheckpointManager:
 
         return wrapped_metric
 
-    def _save_checkpoint(self, score: float) -> Path:
+    def _save_checkpoint(self, score: float) -> Optional[Path]:
         """
         Save module state and update manifest.
 
@@ -126,7 +126,7 @@ class CheckpointManager:
             score: The score that triggered this checkpoint
 
         Returns:
-            Path to the saved checkpoint file
+            Path to the saved checkpoint file, or None if module not set
         """
         if self._module_ref is None:
             logger.warning("No module reference set, cannot save checkpoint")
@@ -229,9 +229,7 @@ class CheckpointManager:
             return None
 
     @classmethod
-    def load_checkpoint(
-        cls, module: dspy.Module, checkpoint_path: Path
-    ) -> dspy.Module:
+    def load_checkpoint(cls, module: dspy.Module, checkpoint_path: Path) -> dspy.Module:
         """
         Load module state from checkpoint.
 

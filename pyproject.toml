@@ -1,0 +1,17 @@
+[tool.mypy]
+ignore_missing_imports = true
+follow_imports = "silent"
+no_site_packages = false
+
+# Ignore specific error codes for third-party libraries
+[[tool.mypy.overrides]]
+module = [
+    "yaml.*",
+    "requests.*",
+    "dspy.*",
+    "langfuse.*",
+    "openai.*",
+    "google.*",
+]
+ignore_missing_imports = true
+ignore_errors = true

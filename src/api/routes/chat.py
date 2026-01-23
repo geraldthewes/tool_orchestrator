@@ -11,7 +11,7 @@ import time
 import uuid
 from typing import Generator
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 
 from ..schemas import (
@@ -23,7 +23,6 @@ from ..schemas import (
     ModelInfo,
     ModelListResponse,
     ErrorResponse,
-    ErrorDetail,
     TraceStep,
 )
 from ...orchestrator import ToolOrchestrator
@@ -160,7 +159,9 @@ def create_chat_completion(
     # Extract text content (handles both string and list formats)
     query = user_messages[-1].get_text_content()
     execution_id = f"exec-{uuid.uuid4().hex[:8]}"
-    logger.info(f"[{execution_id}] Processing chat completion request: {query[:100]}...")
+    logger.info(
+        f"[{execution_id}] Processing chat completion request: {query[:100]}..."
+    )
     logger.debug(f"[{execution_id}] Full query: {query}")
 
     # Initialize tracing context
@@ -172,7 +173,6 @@ def create_chat_completion(
     )
 
     answer = None
-    status = "success"
 
     try:
         # Check if fast-path routing is enabled
@@ -185,14 +185,16 @@ def create_chat_completion(
                 input={"query": query},
             ) as router_span:
                 routing = query_router.route(query)
-                router_span.set_output({
-                    "needs_orchestration": routing.needs_orchestration,
-                    "reason": routing.reason,
-                })
+                router_span.set_output(
+                    {
+                        "needs_orchestration": routing.needs_orchestration,
+                        "reason": routing.reason,
+                    }
+                )
 
             if not routing.needs_orchestration:
                 logger.info(f"[{execution_id}] Fast-path response: {routing.reason}")
-                answer = routing.direct_response
+                answer = routing.direct_response or ""
 
                 # Return streaming response if requested
                 if request.stream:
@@ -306,7 +308,6 @@ def create_chat_completion(
 
     except Exception as e:
         logger.exception(f"[{execution_id}] Chat completion failed: {e}")
-        status = "error"
         tracing_context.end_trace(output=str(e), status="error")
         _flush_tracing()
         raise HTTPException(

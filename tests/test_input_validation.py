@@ -38,7 +38,9 @@ class TestSearchInputValidation:
         result = tool.handler({"raw": "some malformed input"})
 
         assert "error" in result
-        assert "invalid" in result["error"].lower() or "format" in result["error"].lower()
+        assert (
+            "invalid" in result["error"].lower() or "format" in result["error"].lower()
+        )
         assert "query" in result["error"].lower()
         assert result["results"] == []
 
@@ -56,7 +58,9 @@ class TestSearchInputValidation:
         mock_response = Mock()
         mock_response.status_code = 200
         mock_response.json.return_value = {
-            "results": [{"title": "Test", "url": "http://test.com", "content": "Test content"}]
+            "results": [
+                {"title": "Test", "url": "http://test.com", "content": "Test content"}
+            ]
         }
         mock_get.return_value = mock_response
 
@@ -90,7 +94,9 @@ class TestMathSolverInputValidation:
         result = tool.handler({"raw": "some malformed input"})
 
         assert result["success"] is False
-        assert "invalid" in result["error"].lower() or "format" in result["error"].lower()
+        assert (
+            "invalid" in result["error"].lower() or "format" in result["error"].lower()
+        )
         assert "expression" in result["error"].lower()
 
     def test_handler_with_empty_params(self):
@@ -133,7 +139,9 @@ class TestPythonExecutorInputValidation:
         result = tool.handler({"raw": "some malformed input"})
 
         assert result["success"] is False
-        assert "invalid" in result["error"].lower() or "format" in result["error"].lower()
+        assert (
+            "invalid" in result["error"].lower() or "format" in result["error"].lower()
+        )
         assert "code" in result["error"].lower()
 
     def test_handler_with_empty_params(self):

@@ -73,13 +73,13 @@ def _eval_node(node: ast.AST) -> float:
             raise ValueError(f"Unsupported operator: {type(node.op).__name__}")
         left = _eval_node(node.left)
         right = _eval_node(node.right)
-        return OPERATORS[type(node.op)](left, right)
+        return OPERATORS[type(node.op)](left, right)  # type: ignore[operator]
 
     elif isinstance(node, ast.UnaryOp):
         if type(node.op) not in OPERATORS:
             raise ValueError(f"Unsupported operator: {type(node.op).__name__}")
         operand = _eval_node(node.operand)
-        return OPERATORS[type(node.op)](operand)
+        return OPERATORS[type(node.op)](operand)  # type: ignore[operator]
 
     elif isinstance(node, ast.Call):
         if not isinstance(node.func, ast.Name):
@@ -90,7 +90,7 @@ def _eval_node(node: ast.AST) -> float:
             raise ValueError(f"Unknown function: {node.func.id}")
 
         args = [_eval_node(arg) for arg in node.args]
-        return MATH_FUNCTIONS[func_name](*args)
+        return MATH_FUNCTIONS[func_name](*args)  # type: ignore[operator]
 
     elif isinstance(node, ast.Expression):
         return _eval_node(node.body)

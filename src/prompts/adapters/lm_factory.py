@@ -282,6 +282,7 @@ class TracedLM(dspy.LM):
             The LM response
         """
         # Prepare input for tracing
+        input_data: dict[str, Any]
         if messages:
             input_data = {"messages": messages}
         elif prompt:

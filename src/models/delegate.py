@@ -12,6 +12,7 @@ from typing import Optional
 
 class ConnectionType(Enum):
     """Supported LLM connection types."""
+
     OPENAI_COMPATIBLE = "openai_compatible"
     OLLAMA = "ollama"
 
@@ -19,6 +20,7 @@ class ConnectionType(Enum):
 @dataclass
 class DelegateConnection:
     """Connection details for a delegate LLM."""
+
     type: ConnectionType
     base_url: str
     model: str
@@ -28,6 +30,7 @@ class DelegateConnection:
 @dataclass
 class DelegateCapabilities:
     """Capability metadata for a delegate LLM."""
+
     context_length: int
     max_output_tokens: int
     specializations: list[str] = field(default_factory=list)
@@ -36,6 +39,7 @@ class DelegateCapabilities:
 @dataclass
 class DelegateDefaults:
     """Default generation parameters for a delegate LLM."""
+
     temperature: float = 0.7
     max_tokens: int = 2048
     timeout: int = 120  # Request timeout in seconds
@@ -44,6 +48,7 @@ class DelegateDefaults:
 @dataclass
 class DelegateConfig:
     """Complete configuration for a single delegate LLM."""
+
     role: str
     display_name: str
     connection: DelegateConnection
@@ -60,5 +65,6 @@ class DelegateConfig:
 @dataclass
 class DelegatesConfiguration:
     """Top-level configuration containing all delegate LLMs."""
+
     version: str
     delegates: dict[str, DelegateConfig] = field(default_factory=dict)

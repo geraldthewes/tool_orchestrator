@@ -12,6 +12,7 @@ from .delegate import DelegateConfig
 @dataclass
 class OrchestratorConfig:
     """Configuration for the main orchestrator model."""
+
     base_url: str = "http://localhost:8001/v1"
     model: str = "nvidia/Nemotron-Orchestrator-8B"
     temperature: float = 0.7
@@ -21,6 +22,7 @@ class OrchestratorConfig:
 @dataclass
 class ServerConfig:
     """Configuration for the FastAPI server."""
+
     host: str = "0.0.0.0"
     port: int = 8000
     workers: int = 1
@@ -30,6 +32,7 @@ class ServerConfig:
 @dataclass
 class PythonExecutorConfig:
     """Configuration for the Python executor tool."""
+
     url: str = "http://pyexec.cluster:9999/"
     timeout: int = 30
 
@@ -37,6 +40,7 @@ class PythonExecutorConfig:
 @dataclass
 class SearxngConfig:
     """Configuration for the SearXNG search tool."""
+
     url: str = "http://searxng.cluster:9999/search"
     timeout: int = 30
 
@@ -44,6 +48,7 @@ class SearxngConfig:
 @dataclass
 class ToolsConfig:
     """Configuration for tool endpoints."""
+
     searxng: SearxngConfig = field(default_factory=SearxngConfig)
     python_executor: PythonExecutorConfig = field(default_factory=PythonExecutorConfig)
 
@@ -67,12 +72,14 @@ class ToolsConfig:
 @dataclass
 class FastPathConfig:
     """Configuration for fast-path routing of simple queries."""
+
     enabled: bool = True
 
 
 @dataclass
 class LoggingConfig:
     """Configuration for logging."""
+
     level: str = "INFO"
 
 
@@ -82,6 +89,7 @@ class LangfuseConfig:
 
     Tracing auto-enables when both public_key and secret_key are provided.
     """
+
     enabled: bool = False
     public_key: str = ""
     secret_key: str = ""
@@ -100,6 +108,7 @@ class LangfuseConfig:
 @dataclass
 class DSPyConfig:
     """Configuration for DSPy prompt optimization."""
+
     optimized_prompts_path: str = ""
 
 
@@ -110,6 +119,7 @@ class AppConfig:
 
     Holds all configuration sections loaded from config/config.yaml.
     """
+
     version: str = "1.0"
     orchestrator: OrchestratorConfig = field(default_factory=OrchestratorConfig)
     server: ServerConfig = field(default_factory=ServerConfig)

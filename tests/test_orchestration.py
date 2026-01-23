@@ -4,7 +4,6 @@ Tests for ToolOrchestra orchestration.
 These tests cover the orchestration logic using mocked DSPy components.
 """
 
-import pytest
 from unittest.mock import Mock, patch, MagicMock
 
 from src.orchestrator import ToolOrchestrator, OrchestrationStep, ToolResult

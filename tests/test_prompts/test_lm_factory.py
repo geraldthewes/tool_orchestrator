@@ -21,7 +21,9 @@ class TestGetTeacherLM:
 
     def test_raises_error_when_model_missing(self):
         """Test that missing model raises ValueError."""
-        with patch.dict("os.environ", {"TEACHER_BASE_URL": "http://example.com"}, clear=True):
+        with patch.dict(
+            "os.environ", {"TEACHER_BASE_URL": "http://example.com"}, clear=True
+        ):
             with pytest.raises(ValueError, match="Teacher LLM model not configured"):
                 get_teacher_lm()
 

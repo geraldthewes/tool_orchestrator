@@ -8,7 +8,6 @@ Tests cover:
 - Orchestrator integration with/without tracing
 """
 
-import pytest
 from unittest.mock import Mock, patch, MagicMock
 
 
@@ -35,7 +34,6 @@ class TestTracingClient:
     def test_client_disabled_without_package(self):
         """Test client is disabled when langfuse package not available."""
         # Need to reimport to pick up the patched values
-        import importlib
         import src.tracing.client as client_module
 
         # Save original values
@@ -319,7 +317,6 @@ class TestOrchestratorTracingIntegration:
     def test_orchestrator_without_tracing_context(self, mock_context, mock_get_lm):
         """Test orchestrator works without tracing context."""
         from src.orchestrator import ToolOrchestrator
-        from unittest.mock import Mock
 
         mock_lm = MagicMock()
         mock_get_lm.return_value = mock_lm
@@ -347,7 +344,6 @@ class TestOrchestratorTracingIntegration:
         from src.orchestrator import ToolOrchestrator
         from src.tracing import TracingContext
         from src.tracing.client import shutdown_tracing
-        from unittest.mock import Mock
 
         # Ensure tracing is disabled
         shutdown_tracing()
@@ -436,7 +432,6 @@ class TestOrchestratorTracingIntegration:
     def test_traced_orchestrator_call_without_context(self, mock_context, mock_get_lm):
         """Test orchestrator call works without tracing context."""
         from src.orchestrator import ToolOrchestrator
-        from unittest.mock import Mock
 
         mock_lm = MagicMock()
         mock_get_lm.return_value = mock_lm
@@ -530,7 +525,6 @@ class TestTracingWithMockedLangfuse:
     def test_start_as_current_observation_called_for_span(self, mock_langfuse_class):
         """Test start_as_current_observation is called when starting a span."""
         from src.tracing.client import (
-            TracingClient,
             init_tracing_client,
             shutdown_tracing,
         )

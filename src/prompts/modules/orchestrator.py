@@ -133,7 +133,9 @@ def create_delegate_tool(
     delegate = delegates_config.delegates[role]
 
     def delegate_tool(
-        prompt: str, temperature: float = None, max_tokens: int = None
+        prompt: str,
+        temperature: Optional[float] = None,
+        max_tokens: Optional[int] = None,
     ) -> str:
         """Delegate to specialized LLM."""
         if not prompt or not prompt.strip():
@@ -325,6 +327,7 @@ class ToolOrchestratorModule(dspy.Module):
 
     def _run_with_tracing(self, query: str) -> str:
         """Run orchestration with tracing span."""
+        assert self.tracing_context is not None  # Guaranteed by caller check
         with self.tracing_context.span(
             name="orchestration",
             metadata={

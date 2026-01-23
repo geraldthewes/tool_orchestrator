@@ -9,7 +9,7 @@ import json
 import logging
 import random
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Union
 
 import dspy
 
@@ -21,7 +21,7 @@ DEFAULT_EXAMPLES_DIR = DEFAULT_DATA_DIR / "examples"
 
 
 def load_routing_dataset(
-    path: Optional[str] = None,
+    path: Optional[Union[str, Path]] = None,
     split: str = "train",
 ) -> list[dspy.Example]:
     """
@@ -37,17 +37,18 @@ def load_routing_dataset(
     Returns:
         List of DSPy Examples
     """
+    resolved_path: Path
     if path is None:
-        path = DEFAULT_DATA_DIR / "routing_examples.jsonl"
+        resolved_path = DEFAULT_DATA_DIR / "routing_examples.jsonl"
     else:
-        path = Path(path)
+        resolved_path = Path(path)
 
-    if not path.exists():
-        logger.warning(f"Routing dataset not found at {path}")
+    if not resolved_path.exists():
+        logger.warning(f"Routing dataset not found at {resolved_path}")
         return []
 
     examples = []
-    with open(path, "r") as f:
+    with open(resolved_path, "r") as f:
         for line in f:
             line = line.strip()
             if not line:
@@ -66,12 +67,12 @@ def load_routing_dataset(
                 logger.warning(f"Failed to parse routing example: {e}")
                 continue
 
-    logger.info(f"Loaded {len(examples)} routing examples from {path}")
+    logger.info(f"Loaded {len(examples)} routing examples from {resolved_path}")
     return examples
 
 
 def load_orchestration_dataset(
-    path: Optional[str] = None,
+    path: Optional[Union[str, Path]] = None,
     split: str = "train",
 ) -> list[dspy.Example]:
     """
@@ -87,17 +88,18 @@ def load_orchestration_dataset(
     Returns:
         List of DSPy Examples
     """
+    resolved_path: Path
     if path is None:
-        path = DEFAULT_DATA_DIR / "orchestration_examples.jsonl"
+        resolved_path = DEFAULT_DATA_DIR / "orchestration_examples.jsonl"
     else:
-        path = Path(path)
+        resolved_path = Path(path)
 
-    if not path.exists():
-        logger.warning(f"Orchestration dataset not found at {path}")
+    if not resolved_path.exists():
+        logger.warning(f"Orchestration dataset not found at {resolved_path}")
         return []
 
     examples = []
-    with open(path, "r") as f:
+    with open(resolved_path, "r") as f:
         for line in f:
             line = line.strip()
             if not line:
@@ -114,7 +116,7 @@ def load_orchestration_dataset(
                 logger.warning(f"Failed to parse orchestration example: {e}")
                 continue
 
-    logger.info(f"Loaded {len(examples)} orchestration examples from {path}")
+    logger.info(f"Loaded {len(examples)} orchestration examples from {resolved_path}")
     return examples
 
 
@@ -181,7 +183,7 @@ def create_orchestration_example(
 
 
 def load_examples_from_directory(
-    directory: Optional[str] = None,
+    directory: Optional[Union[str, Path]] = None,
     pattern: str = "*.jsonl",
     example_type: str = "orchestration",
 ) -> list[dspy.Example]:
@@ -196,17 +198,18 @@ def load_examples_from_directory(
     Returns:
         List of DSPy Examples
     """
+    resolved_dir: Path
     if directory is None:
-        directory = DEFAULT_EXAMPLES_DIR
+        resolved_dir = DEFAULT_EXAMPLES_DIR
     else:
-        directory = Path(directory)
+        resolved_dir = Path(directory)
 
-    if not directory.exists():
-        logger.warning(f"Examples directory not found: {directory}")
+    if not resolved_dir.exists():
+        logger.warning(f"Examples directory not found: {resolved_dir}")
         return []
 
     examples = []
-    for filepath in sorted(directory.glob(pattern)):
+    for filepath in sorted(resolved_dir.glob(pattern)):
         # Determine type from filename if not specified
         is_routing = "routing" in filepath.name
         file_type = "routing" if is_routing else "orchestration"

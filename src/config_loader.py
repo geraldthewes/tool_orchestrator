@@ -35,7 +35,9 @@ from .models import (
 logger = logging.getLogger(__name__)
 
 # Default config paths relative to project root
-DEFAULT_DELEGATES_CONFIG_PATH = Path(__file__).parent.parent / "config" / "delegates.yaml"
+DEFAULT_DELEGATES_CONFIG_PATH = (
+    Path(__file__).parent.parent / "config" / "delegates.yaml"
+)
 DEFAULT_CONFIG_PATH = Path(__file__).parent.parent / "config" / "config.yaml"
 
 # Regex for environment variable interpolation: ${VAR} or ${VAR:-default}
@@ -57,6 +59,7 @@ def resolve_env_vars(value: str) -> str:
     Returns:
         String with env vars resolved
     """
+
     def replace_match(match: re.Match) -> str:
         var_name = match.group(1)
         default_value = match.group(2) if match.group(2) is not None else ""
@@ -77,7 +80,9 @@ def _parse_connection(data: dict) -> DelegateConnection:
         type=conn_type,
         base_url=resolve_env_vars(data.get("base_url", "")),
         model=resolve_env_vars(data.get("model", "")),
-        api_key=resolve_env_vars(data.get("api_key", "")) if data.get("api_key") else None,
+        api_key=(
+            resolve_env_vars(data.get("api_key", "")) if data.get("api_key") else None
+        ),
     )
 
 
@@ -155,12 +160,16 @@ def load_delegates_config(path: Optional[str] = None) -> DelegatesConfiguration:
     """
     # Determine config path
     if path is None:
-        path = os.environ.get("DELEGATES_CONFIG_PATH", str(DEFAULT_DELEGATES_CONFIG_PATH))
+        path = os.environ.get(
+            "DELEGATES_CONFIG_PATH", str(DEFAULT_DELEGATES_CONFIG_PATH)
+        )
 
     config_path = Path(path)
 
     if not config_path.exists():
-        logger.warning(f"Delegates config not found at {config_path}, using empty config")
+        logger.warning(
+            f"Delegates config not found at {config_path}, using empty config"
+        )
         return DelegatesConfiguration(version="1.0", delegates={})
 
     logger.debug(f"Loading delegates config from {config_path}")
@@ -411,12 +420,16 @@ def load_app_config(path: Optional[str] = None, reload: bool = False) -> AppConf
     # Cache the config
     _app_config = app_config
 
-    logger.debug(f"Configuration loaded: version={version}, delegates={list(app_config.delegates.keys())}")
+    logger.debug(
+        f"Configuration loaded: version={version}, delegates={list(app_config.delegates.keys())}"
+    )
 
     return app_config
 
 
-def get_delegates_from_app_config(app_config: Optional[AppConfig] = None) -> DelegatesConfiguration:
+def get_delegates_from_app_config(
+    app_config: Optional[AppConfig] = None,
+) -> DelegatesConfiguration:
     """
     Get a DelegatesConfiguration from an AppConfig.
 

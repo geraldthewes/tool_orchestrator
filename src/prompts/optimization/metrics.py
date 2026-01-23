@@ -74,9 +74,7 @@ def routing_with_reasoning_quality(
     return min(1.0, accuracy + reasoning_bonus)
 
 
-def orchestration_quality(
-    example: dspy.Example, prediction: Any, trace=None
-) -> float:
+def orchestration_quality(example: dspy.Example, prediction: Any, trace=None) -> float:
     """
     Metric for evaluating orchestration answer quality.
 
@@ -112,7 +110,9 @@ def orchestration_quality(
 
     # If keywords are provided, check for presence
     if expected_keywords:
-        found = sum(1 for kw in expected_keywords if kw.lower() in predicted_answer_lower)
+        found = sum(
+            1 for kw in expected_keywords if kw.lower() in predicted_answer_lower
+        )
         return found / len(expected_keywords)
 
     # If no expected values, return 0.5 for non-empty answer

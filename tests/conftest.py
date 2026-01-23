@@ -59,6 +59,7 @@ def mock_fast_lm(mock_dspy_lm):
 def reset_dspy_settings():
     """Reset DSPy settings before each test."""
     import dspy
+
     # Reset any configured LMs
     try:
         dspy.settings.configure(lm=None)

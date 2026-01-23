@@ -5,8 +5,20 @@ from unittest.mock import patch, Mock
 from fastapi.testclient import TestClient
 
 from src.api.main import app
+from src.prompts.modules.router import RoutingResult
 
 client = TestClient(app)
+
+
+def create_orchestration_routing_mock():
+    """Create a mock QueryRouter that always returns needs_orchestration=True."""
+    mock_router = Mock()
+    mock_router.route.return_value = RoutingResult(
+        needs_orchestration=True,
+        direct_response=None,
+        reason="Test: force orchestration",
+    )
+    return mock_router
 
 
 class TestModelsEndpoint:
@@ -119,10 +131,16 @@ class TestChatCompletionsEndpoint:
         )
         assert response.status_code == 400
 
+    @patch("src.api.routes.chat.QueryRouter")
     @patch("src.api.routes.chat.ToolOrchestrator")
     @patch("src.api.routes.chat.LLMClient")
-    def test_chat_completion_streaming(self, mock_llm_client, mock_orchestrator_class):
+    def test_chat_completion_streaming(
+        self, mock_llm_client, mock_orchestrator_class, mock_router_class
+    ):
         """Chat completion with stream=true should return SSE response."""
+        # Mock QueryRouter to force orchestration path
+        mock_router_class.return_value = create_orchestration_routing_mock()
+
         mock_instance = Mock()
         mock_instance.run.return_value = "Streamed response"
         mock_instance.steps = []  # Required for tracing metadata
@@ -150,17 +168,22 @@ class TestChatCompletionsEndpoint:
 
         # Verify first chunk contains the response
         import json
+
         chunk = json.loads(lines[0].replace("data: ", ""))
         assert chunk["object"] == "chat.completion.chunk"
         assert chunk["model"] == "tool-orchestrator"
         assert chunk["choices"][0]["delta"]["content"] == "Streamed response"
 
+    @patch("src.api.routes.chat.QueryRouter")
     @patch("src.api.routes.chat.ToolOrchestrator")
     @patch("src.api.routes.chat.LLMClient")
     def test_chat_completion_uses_last_user_message(
-        self, mock_llm_client, mock_orchestrator_class
+        self, mock_llm_client, mock_orchestrator_class, mock_router_class
     ):
         """Chat completion should use the last user message."""
+        # Mock QueryRouter to force orchestration path
+        mock_router_class.return_value = create_orchestration_routing_mock()
+
         mock_instance = Mock()
         mock_instance.run.return_value = "Response"
         mock_instance.steps = []  # Required for tracing metadata
@@ -181,12 +204,16 @@ class TestChatCompletionsEndpoint:
         assert response.status_code == 200
         mock_instance.run.assert_called_once_with("Second message")
 
+    @patch("src.api.routes.chat.QueryRouter")
     @patch("src.api.routes.chat.ToolOrchestrator")
     @patch("src.api.routes.chat.LLMClient")
     def test_chat_completion_error_handling(
-        self, mock_llm_client, mock_orchestrator_class
+        self, mock_llm_client, mock_orchestrator_class, mock_router_class
     ):
         """Chat completion should handle orchestrator errors."""
+        # Mock QueryRouter to force orchestration path
+        mock_router_class.return_value = create_orchestration_routing_mock()
+
         mock_instance = Mock()
         mock_instance.run.side_effect = Exception("LLM connection failed")
         mock_instance.steps = []  # Required for tracing metadata

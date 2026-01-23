@@ -365,7 +365,7 @@ class GenerationContext:
                 "status": self._status,
                 "duration_ms": round(duration_ms, 2),
             }
-            update_kwargs = {"metadata": update_metadata}
+            update_kwargs: dict[str, Any] = {"metadata": update_metadata}
             if self._output is not None:
                 update_kwargs["output"] = self._output
             if self._usage:

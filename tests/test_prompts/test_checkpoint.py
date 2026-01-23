@@ -6,9 +6,8 @@ Tests checkpoint save, load, and manifest functionality.
 
 import json
 import pytest
-from datetime import datetime, timezone
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import dspy
 
@@ -52,7 +51,8 @@ class TestMetricWrapper:
         manager = CheckpointManager(tmp_path, "test")
         module = MagicMock(spec=dspy.Module)
 
-        base_metric = lambda e, p, t=None: 0.5
+        def base_metric(e, p, t=None):
+            return 0.5
 
         wrapped = manager.create_metric_wrapper(base_metric, module)
 
@@ -64,7 +64,8 @@ class TestMetricWrapper:
         manager = CheckpointManager(tmp_path, "test")
         module = MagicMock(spec=dspy.Module)
 
-        base_metric = lambda e, p, t=None: 0.75
+        def base_metric(e, p, t=None):
+            return 0.75
 
         wrapped = manager.create_metric_wrapper(base_metric, module)
         score = wrapped(MagicMock(), MagicMock())
@@ -76,7 +77,8 @@ class TestMetricWrapper:
         manager = CheckpointManager(tmp_path, "test")
         module = MagicMock(spec=dspy.Module)
 
-        base_metric = lambda e, p, t=None: 0.8
+        def base_metric(e, p, t=None):
+            return 0.8
 
         wrapped = manager.create_metric_wrapper(base_metric, module)
         wrapped(MagicMock(), MagicMock())
@@ -91,12 +93,16 @@ class TestMetricWrapper:
         module = MagicMock(spec=dspy.Module)
 
         # First call improves
-        metric1 = lambda e, p, t=None: 0.8
+        def metric1(e, p, t=None):
+            return 0.8
+
         wrapped1 = manager.create_metric_wrapper(metric1, module)
         wrapped1(MagicMock(), MagicMock())
 
         # Second call with same score doesn't improve
-        metric2 = lambda e, p, t=None: 0.8
+        def metric2(e, p, t=None):
+            return 0.8
+
         wrapped2 = manager.create_metric_wrapper(metric2, module)
         wrapped2(MagicMock(), MagicMock())
 

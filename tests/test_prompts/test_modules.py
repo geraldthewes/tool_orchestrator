@@ -4,9 +4,7 @@ Tests for DSPy Modules.
 Tests module behavior with mocked LMs.
 """
 
-import pytest
 from unittest.mock import Mock, patch, MagicMock
-from dataclasses import dataclass
 
 import dspy
 
@@ -164,6 +162,7 @@ class TestCreateDspyTool:
 
     def test_create_tool_basic(self):
         """Test creating a basic DSPy tool."""
+
         def handler(params):
             return {"result": params.get("x", 0) * 2}
 
@@ -182,6 +181,7 @@ class TestCreateDspyTool:
 
     def test_create_tool_execution(self):
         """Test executing a created DSPy tool."""
+
         def handler(params):
             return {"sum": params.get("a", 0) + params.get("b", 0)}
 
@@ -200,6 +200,7 @@ class TestCreateDspyTool:
 
     def test_create_tool_handles_errors(self):
         """Test tool handles errors gracefully."""
+
         def handler(params):
             raise ValueError("Test error")
 

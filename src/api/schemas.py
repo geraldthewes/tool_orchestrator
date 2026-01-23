@@ -18,7 +18,9 @@ class ContentPart(BaseModel):
     type: Literal["text", "image_url"] = Field(
         ..., description="The type of content part"
     )
-    text: Optional[str] = Field(default=None, description="Text content (for type='text')")
+    text: Optional[str] = Field(
+        default=None, description="Text content (for type='text')"
+    )
     image_url: Optional[dict] = Field(
         default=None, description="Image URL object (for type='image_url')"
     )
@@ -97,9 +99,15 @@ class TraceStep(BaseModel):
     """A single step in the orchestration trace."""
 
     step: int = Field(..., description="Step number in the orchestration")
-    reasoning: Optional[str] = Field(default=None, description="The reasoning/thought for this step")
-    action: Optional[str] = Field(default=None, description="Tool name that was invoked")
-    action_input: Optional[str] = Field(default=None, description="Input passed to the tool")
+    reasoning: Optional[str] = Field(
+        default=None, description="The reasoning/thought for this step"
+    )
+    action: Optional[str] = Field(
+        default=None, description="Tool name that was invoked"
+    )
+    action_input: Optional[str] = Field(
+        default=None, description="Input passed to the tool"
+    )
     observation: Optional[str] = Field(default=None, description="Result from the tool")
     is_final: bool = Field(default=False, description="Whether this was the final step")
 

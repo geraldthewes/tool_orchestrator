@@ -12,7 +12,7 @@ All operations are no-ops when tracing is disabled.
 """
 
 import logging
-from typing import Optional
+from typing import Any, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -80,7 +80,7 @@ class TracingClient:
 
         # Try to initialize the client
         try:
-            kwargs = {
+            kwargs: dict[str, Any] = {
                 "public_key": public_key,
                 "secret_key": secret_key,
                 "debug": debug,

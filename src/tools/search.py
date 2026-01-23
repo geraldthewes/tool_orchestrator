@@ -57,12 +57,14 @@ def search(
         # Extract and format results
         results = []
         for result in data.get("results", [])[:num_results]:
-            results.append({
-                "title": result.get("title", ""),
-                "url": result.get("url", ""),
-                "content": result.get("content", ""),
-                "engine": result.get("engine", ""),
-            })
+            results.append(
+                {
+                    "title": result.get("title", ""),
+                    "url": result.get("url", ""),
+                    "content": result.get("content", ""),
+                    "engine": result.get("engine", ""),
+                }
+            )
 
         return {
             "query": query,
@@ -100,7 +102,7 @@ def format_results_for_llm(search_results: dict) -> str:
     for i, result in enumerate(search_results["results"], 1):
         formatted += f"{i}. {result['title']}\n"
         formatted += f"   URL: {result['url']}\n"
-        if result['content']:
+        if result["content"]:
             formatted += f"   {result['content'][:200]}...\n"
         formatted += "\n"
 

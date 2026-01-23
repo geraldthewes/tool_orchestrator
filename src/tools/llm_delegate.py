@@ -35,7 +35,9 @@ def call_delegate(
         Dictionary with response or error
     """
     if connection.type == ConnectionType.OPENAI_COMPATIBLE:
-        return _call_openai_compatible(connection, prompt, temperature, max_tokens, timeout)
+        return _call_openai_compatible(
+            connection, prompt, temperature, max_tokens, timeout
+        )
     elif connection.type == ConnectionType.OLLAMA:
         return _call_ollama(connection, prompt, temperature, timeout)
     else:
@@ -176,7 +178,11 @@ def call_delegate_by_role(
     return call_delegate(
         connection=delegate.connection,
         prompt=prompt,
-        temperature=temperature if temperature is not None else delegate.defaults.temperature,
-        max_tokens=max_tokens if max_tokens is not None else delegate.defaults.max_tokens,
+        temperature=(
+            temperature if temperature is not None else delegate.defaults.temperature
+        ),
+        max_tokens=(
+            max_tokens if max_tokens is not None else delegate.defaults.max_tokens
+        ),
         timeout=delegate.defaults.timeout,
     )

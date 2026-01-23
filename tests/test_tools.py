@@ -10,7 +10,10 @@ from unittest.mock import patch, Mock
 import requests
 
 from src.tools.math_solver import calculate, format_result_for_llm as format_math_result
-from src.tools.python_executor import execute_python, format_result_for_llm as format_python_result
+from src.tools.python_executor import (
+    execute_python,
+    format_result_for_llm as format_python_result,
+)
 
 
 class TestMathSolver:
@@ -176,7 +179,7 @@ print(total)
         mock_response.json.return_value = {
             "status": "failed",
             "stdout": "",
-            "stderr": "Traceback (most recent call last):\n  File \"main.py\", line 1\nZeroDivisionError: division by zero",
+            "stderr": 'Traceback (most recent call last):\n  File "main.py", line 1\nZeroDivisionError: division by zero',
             "exit_code": 1,
         }
         mock_post.return_value = mock_response
@@ -207,7 +210,9 @@ print(total)
     @patch("src.tools.python_executor.requests.post")
     def test_connection_error(self, mock_post):
         """Test handling of connection errors."""
-        mock_post.side_effect = requests.exceptions.ConnectionError("Connection refused")
+        mock_post.side_effect = requests.exceptions.ConnectionError(
+            "Connection refused"
+        )
 
         result = execute_python("print('test')")
 
@@ -266,7 +271,9 @@ print(total)
 
         # Verify endpoint URL uses /api/v1/eval
         call_args = mock_post.call_args
-        endpoint_url = call_args.args[0] if call_args.args else call_kwargs.kwargs.get("url", "")
+        endpoint_url = (
+            call_args.args[0] if call_args.args else call_kwargs.kwargs.get("url", "")
+        )
         assert "/api/v1/eval" in endpoint_url
 
     @patch("src.tools.python_executor.requests.post")
