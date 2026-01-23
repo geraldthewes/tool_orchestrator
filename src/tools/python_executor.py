@@ -39,6 +39,10 @@ def execute_python(code: str, timeout_seconds: int = 30) -> dict:
 
     payload = {"code": code}
 
+    # Log code execution (truncate to avoid log bloat)
+    code_preview = code[:200] + "..." if len(code) > 200 else code
+    logger.info(f"Executing Python code: {code_preview}")
+
     try:
         response = requests.post(
             endpoint,

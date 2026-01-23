@@ -10,6 +10,7 @@ from .lm_factory import (
     get_delegate_lm,
     get_fast_lm,
     configure_dspy_default,
+    TracedLM,
 )
 
 __all__ = [
@@ -17,4 +18,5 @@ __all__ = [
     "get_delegate_lm",
     "get_fast_lm",
     "configure_dspy_default",
+    "TracedLM",
 ]

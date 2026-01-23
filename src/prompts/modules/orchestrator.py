@@ -13,6 +13,7 @@ import dspy
 
 from ..signatures import ToolOrchestrationTask
 from ..adapters import get_orchestrator_lm
+from ..adapters.lm_factory import TracedLM
 from ...tools.registry import ToolRegistry
 from ...config_loader import load_delegates_config
 from ...models import DelegatesConfiguration
@@ -49,6 +50,7 @@ def create_dspy_tool(
     description: str,
     handler: Callable[[dict], Any],
     formatter: Callable[[Any], str],
+    tracing_context: Optional[TracingContext] = None,
 ) -> Callable:
     """
     Create a DSPy-compatible tool function from handler and formatter.
@@ -58,6 +60,7 @@ def create_dspy_tool(
         description: Tool description
         handler: Function that executes the tool
         formatter: Function that formats the result
+        tracing_context: Optional tracing context for observability
 
     Returns:
         DSPy-compatible tool function
@@ -65,13 +68,35 @@ def create_dspy_tool(
 
     def tool_func(**kwargs) -> str:
         """Execute the tool and return formatted result."""
-        try:
-            raw_result = handler(kwargs)
-            formatted = formatter(raw_result)
-            return formatted
-        except Exception as e:
-            logger.error(f"Tool execution failed: {name} - {e}")
-            return f"Tool execution error: {e}"
+        if tracing_context:
+            with tracing_context.span(
+                name=f"tool:{name}",
+                input=kwargs,
+            ) as span:
+                try:
+                    raw_result = handler(kwargs)
+                    formatted = formatter(raw_result)
+                    span.set_output(
+                        {
+                            "result": (
+                                formatted[:500] if len(formatted) > 500 else formatted
+                            )
+                        }
+                    )
+                    return formatted
+                except Exception as e:
+                    logger.error(f"Tool execution failed: {name} - {e}")
+                    span.set_status("error")
+                    return f"Tool execution error: {e}"
+        else:
+            # Original logic without tracing
+            try:
+                raw_result = handler(kwargs)
+                formatted = formatter(raw_result)
+                return formatted
+            except Exception as e:
+                logger.error(f"Tool execution failed: {name} - {e}")
+                return f"Tool execution error: {e}"
 
     # Set function metadata for DSPy
     tool_func.__name__ = name
@@ -86,6 +111,7 @@ def create_delegate_tool(
     description: str,
     tool_name: str,
     delegates_config: DelegatesConfiguration,
+    tracing_context: Optional[TracingContext] = None,
 ) -> Callable:
     """
     Create a DSPy-compatible tool function for a delegate LLM.
@@ -96,6 +122,7 @@ def create_delegate_tool(
         description: Tool description
         tool_name: Tool name (e.g., "ask_reasoner")
         delegates_config: Delegates configuration
+        tracing_context: Optional tracing context for observability
 
     Returns:
         DSPy-compatible tool function
@@ -104,7 +131,9 @@ def create_delegate_tool(
 
     delegate = delegates_config.delegates[role]
 
-    def delegate_tool(prompt: str, temperature: float = None, max_tokens: int = None) -> str:
+    def delegate_tool(
+        prompt: str, temperature: float = None, max_tokens: int = None
+    ) -> str:
         """Delegate to specialized LLM."""
         if not prompt or not prompt.strip():
             return "Error: Prompt is empty. Please provide a prompt."
@@ -116,19 +145,44 @@ def create_delegate_tool(
         if tokens > delegate.capabilities.max_output_tokens:
             tokens = delegate.capabilities.max_output_tokens
 
-        result = call_delegate(
-            connection=delegate.connection,
-            prompt=prompt,
-            temperature=temp,
-            max_tokens=tokens,
-            timeout=delegate.defaults.timeout,
-        )
-
-        return format_result_for_llm(result)
+        if tracing_context:
+            with tracing_context.span(
+                name=f"tool:{tool_name}",
+                input={
+                    "prompt": prompt[:500] if len(prompt) > 500 else prompt,
+                    "temperature": temp,
+                    "max_tokens": tokens,
+                },
+            ) as span:
+                result = call_delegate(
+                    connection=delegate.connection,
+                    prompt=prompt,
+                    temperature=temp,
+                    max_tokens=tokens,
+                    timeout=delegate.defaults.timeout,
+                )
+                formatted = format_result_for_llm(result)
+                span.set_output(
+                    {"result": formatted[:500] if len(formatted) > 500 else formatted}
+                )
+                if not result.get("success", False):
+                    span.set_status("error")
+                return formatted
+        else:
+            result = call_delegate(
+                connection=delegate.connection,
+                prompt=prompt,
+                temperature=temp,
+                max_tokens=tokens,
+                timeout=delegate.defaults.timeout,
+            )
+            return format_result_for_llm(result)
 
     # Set function metadata for DSPy
     delegate_tool.__name__ = tool_name
-    delegate_tool.__doc__ = f"{description} (Best for: {', '.join(delegate.capabilities.specializations)})"
+    delegate_tool.__doc__ = (
+        f"{description} (Best for: {', '.join(delegate.capabilities.specializations)})"
+    )
 
     return delegate_tool
 
@@ -190,6 +244,7 @@ class ToolOrchestratorModule(dspy.Module):
                 description=tool_def.description,
                 handler=tool_def.handler,
                 formatter=tool_def.formatter,
+                tracing_context=self.tracing_context,
             )
             tools.append(dspy_tool)
             logger.debug(f"Registered DSPy tool: {name}")
@@ -202,6 +257,7 @@ class ToolOrchestratorModule(dspy.Module):
                 description=delegate.description,
                 tool_name=delegate.tool_name,
                 delegates_config=self.delegates_config,
+                tracing_context=self.tracing_context,
             )
             tools.append(delegate_tool)
             logger.debug(f"Registered DSPy delegate tool: {delegate.tool_name}")
@@ -223,6 +279,12 @@ class ToolOrchestratorModule(dspy.Module):
 
         # Configure DSPy with orchestrator LM
         orchestrator_lm = get_orchestrator_lm()
+
+        # Wrap with tracing if available
+        if self.tracing_context:
+            orchestrator_lm = TracedLM(
+                orchestrator_lm, self.tracing_context, "orchestrator"
+            )
 
         try:
             with dspy.context(lm=orchestrator_lm):
@@ -268,10 +330,12 @@ class ToolOrchestratorModule(dspy.Module):
             input={"query": query},
         ) as orch_span:
             result = self.forward(query)
-            orch_span.set_output({
-                "steps_taken": len(self.steps),
-                "final_answer": result[:500] if result else "",
-            })
+            orch_span.set_output(
+                {
+                    "steps_taken": len(self.steps),
+                    "final_answer": result[:500] if result else "",
+                }
+            )
             return result
 
     def _log_trace_summary(self) -> None:
@@ -282,14 +346,18 @@ class ToolOrchestratorModule(dspy.Module):
         logger.info(f"{id_prefix}{'─' * 50}")
         for step in self.steps:
             if step.is_final:
-                logger.info(f"{id_prefix}Step {step.step_number} [FINAL]: {step.action}")
+                logger.info(
+                    f"{id_prefix}Step {step.step_number} [FINAL]: {step.action}"
+                )
             else:
                 obs_preview = (
                     (step.observation[:80] + "...")
                     if step.observation and len(step.observation) > 80
                     else step.observation
                 )
-                logger.info(f"{id_prefix}Step {step.step_number}: {step.action} -> {obs_preview}")
+                logger.info(
+                    f"{id_prefix}Step {step.step_number}: {step.action} -> {obs_preview}"
+                )
 
     def get_trace(self) -> list[dict]:
         """

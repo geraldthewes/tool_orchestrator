@@ -330,7 +330,9 @@ class TestOrchestratorTracingIntegration:
 
     @patch("src.prompts.modules.orchestrator.get_orchestrator_lm")
     @patch("src.prompts.modules.orchestrator.dspy.context")
-    def test_orchestrator_with_tracing_context_disabled(self, mock_context, mock_get_lm):
+    def test_orchestrator_with_tracing_context_disabled(
+        self, mock_context, mock_get_lm
+    ):
         """Test orchestrator works with disabled tracing context."""
         from src.orchestrator import ToolOrchestrator
         from src.tracing import TracingContext
@@ -517,7 +519,11 @@ class TestTracingWithMockedLangfuse:
     @patch("src.tracing.client.Langfuse")
     def test_start_as_current_observation_called_for_span(self, mock_langfuse_class):
         """Test start_as_current_observation is called when starting a span."""
-        from src.tracing.client import TracingClient, init_tracing_client, shutdown_tracing
+        from src.tracing.client import (
+            TracingClient,
+            init_tracing_client,
+            shutdown_tracing,
+        )
         from src.tracing.context import SpanContext
 
         mock_instance = MagicMock()
@@ -539,7 +545,9 @@ class TestTracingWithMockedLangfuse:
             shutdown_tracing()
 
     @patch("src.tracing.client.Langfuse")
-    def test_start_as_current_observation_called_for_generation(self, mock_langfuse_class):
+    def test_start_as_current_observation_called_for_generation(
+        self, mock_langfuse_class
+    ):
         """Test start_as_current_observation is called when starting a generation."""
         from src.tracing.client import init_tracing_client, shutdown_tracing
         from src.tracing.context import GenerationContext
@@ -593,8 +601,10 @@ class TestContextManagerUsage:
                 session_id=None,
             )
             # Verify context manager's update_trace was NOT called
-            assert not hasattr(mock_context_manager, 'update_trace') or \
-                not mock_context_manager.update_trace.called
+            assert (
+                not hasattr(mock_context_manager, "update_trace")
+                or not mock_context_manager.update_trace.called
+            )
 
             # End trace and verify __exit__ is called on context manager
             ctx.end_trace(output="result", status="success")
@@ -694,7 +704,7 @@ class TestContextManagerUsage:
             # __exit__ should be called on context manager, not span
             mock_context_manager.__exit__.assert_called_once()
             # If span has __exit__, it should NOT be called
-            if hasattr(mock_span, '__exit__'):
+            if hasattr(mock_span, "__exit__"):
                 mock_span.__exit__.assert_not_called()
         finally:
             shutdown_tracing()
@@ -744,7 +754,9 @@ class TestGracefulDegradation:
         from src.tracing.context import SpanContext
 
         mock_instance = MagicMock()
-        mock_instance.start_as_current_observation.side_effect = Exception("Start error")
+        mock_instance.start_as_current_observation.side_effect = Exception(
+            "Start error"
+        )
         mock_langfuse_class.return_value = mock_instance
 
         try:
@@ -764,7 +776,9 @@ class TestGracefulDegradation:
         from src.tracing.context import GenerationContext
 
         mock_instance = MagicMock()
-        mock_instance.start_as_current_observation.side_effect = Exception("Start error")
+        mock_instance.start_as_current_observation.side_effect = Exception(
+            "Start error"
+        )
         mock_langfuse_class.return_value = mock_instance
 
         try:
@@ -908,7 +922,9 @@ class TestLangfuseEndpointConfiguration:
         assert call_kwargs["host"] == "http://localhost:3000"
 
     @patch("src.tracing.client.Langfuse")
-    def test_warning_logged_for_host_without_protocol(self, mock_langfuse_class, caplog):
+    def test_warning_logged_for_host_without_protocol(
+        self, mock_langfuse_class, caplog
+    ):
         """Test warning is logged when host lacks protocol."""
         from src.tracing.client import TracingClient
         import logging
@@ -924,6 +940,321 @@ class TestLangfuseEndpointConfiguration:
             )
 
         assert "malformed" in caplog.text.lower() or "LANGFUSE_HOST" in caplog.text
+
+
+class TestTracedLM:
+    """Tests for TracedLM wrapper."""
+
+    def test_traced_lm_delegates_attributes(self):
+        """Test TracedLM delegates attribute access to underlying LM."""
+        from src.prompts.adapters.lm_factory import TracedLM
+        from src.tracing import TracingContext
+        from src.tracing.client import shutdown_tracing
+
+        shutdown_tracing()
+
+        mock_lm = MagicMock()
+        mock_lm.model = "test-model"
+        mock_lm.temperature = 0.7
+
+        ctx = TracingContext(execution_id="test-123")
+        traced = TracedLM(mock_lm, ctx, "test")
+
+        assert traced.model == "test-model"
+        assert traced.temperature == 0.7
+
+    def test_traced_lm_calls_underlying_lm(self):
+        """Test TracedLM calls the underlying LM."""
+        from src.prompts.adapters.lm_factory import TracedLM
+        from src.tracing import TracingContext
+        from src.tracing.client import shutdown_tracing
+
+        shutdown_tracing()
+
+        mock_lm = MagicMock()
+        mock_lm.model = "test-model"
+        mock_lm.return_value = "test response"
+
+        ctx = TracingContext(execution_id="test-123")
+        traced = TracedLM(mock_lm, ctx, "test")
+
+        result = traced(prompt="test prompt")
+
+        mock_lm.assert_called_once_with(prompt="test prompt", messages=None)
+        assert result == "test response"
+
+    def test_traced_lm_with_messages(self):
+        """Test TracedLM handles messages parameter."""
+        from src.prompts.adapters.lm_factory import TracedLM
+        from src.tracing import TracingContext
+        from src.tracing.client import shutdown_tracing
+
+        shutdown_tracing()
+
+        mock_lm = MagicMock()
+        mock_lm.model = "test-model"
+        mock_lm.return_value = "test response"
+
+        ctx = TracingContext(execution_id="test-123")
+        traced = TracedLM(mock_lm, ctx, "test")
+
+        messages = [{"role": "user", "content": "hello"}]
+        result = traced(messages=messages)
+
+        mock_lm.assert_called_once_with(prompt=None, messages=messages)
+        assert result == "test response"
+
+    @patch("src.tracing.client.Langfuse")
+    def test_traced_lm_creates_generation_span(self, mock_langfuse_class):
+        """Test TracedLM creates generation span when tracing enabled."""
+        from src.prompts.adapters.lm_factory import TracedLM
+        from src.tracing import TracingContext
+        from src.tracing.client import init_tracing_client, shutdown_tracing
+
+        mock_instance = MagicMock()
+        mock_context_manager = MagicMock()
+        mock_generation = MagicMock()
+        mock_context_manager.__enter__ = MagicMock(return_value=mock_generation)
+        mock_context_manager.__exit__ = MagicMock(return_value=None)
+        mock_instance.start_as_current_observation.return_value = mock_context_manager
+        mock_instance.auth_check.return_value = True
+        mock_langfuse_class.return_value = mock_instance
+
+        try:
+            init_tracing_client(public_key="pk-test", secret_key="sk-test")
+
+            mock_lm = MagicMock()
+            mock_lm.model = "test-model"
+            mock_lm.return_value = "test response"
+
+            ctx = TracingContext(execution_id="test-123")
+            traced = TracedLM(mock_lm, ctx, "orchestrator")
+
+            traced(prompt="test prompt", temperature=0.5)
+
+            # Verify generation was created
+            call_kwargs = mock_instance.start_as_current_observation.call_args[1]
+            assert call_kwargs["as_type"] == "generation"
+            assert call_kwargs["name"] == "llm:orchestrator"
+            assert call_kwargs["model"] == "test-model"
+            assert "prompt" in call_kwargs["input"]
+
+            # Verify output was set
+            mock_generation.update.assert_called()
+        finally:
+            shutdown_tracing()
+
+
+class TestToolSpanTracing:
+    """Tests for tool execution span tracing."""
+
+    @patch("src.tracing.client.Langfuse")
+    def test_dspy_tool_creates_span_with_tracing(self, mock_langfuse_class):
+        """Test create_dspy_tool creates spans when tracing enabled."""
+        from src.prompts.modules.orchestrator import create_dspy_tool
+        from src.tracing import TracingContext
+        from src.tracing.client import init_tracing_client, shutdown_tracing
+
+        mock_instance = MagicMock()
+        mock_context_manager = MagicMock()
+        mock_span = MagicMock()
+        mock_context_manager.__enter__ = MagicMock(return_value=mock_span)
+        mock_context_manager.__exit__ = MagicMock(return_value=None)
+        mock_instance.start_as_current_observation.return_value = mock_context_manager
+        mock_instance.auth_check.return_value = True
+        mock_langfuse_class.return_value = mock_instance
+
+        try:
+            init_tracing_client(public_key="pk-test", secret_key="sk-test")
+
+            ctx = TracingContext(execution_id="test-123")
+
+            def test_handler(params):
+                return {"success": True, "result": params.get("value", 0) * 2}
+
+            def test_formatter(result):
+                return f"Result: {result['result']}"
+
+            tool = create_dspy_tool(
+                name="test_tool",
+                description="A test tool",
+                handler=test_handler,
+                formatter=test_formatter,
+                tracing_context=ctx,
+            )
+
+            result = tool(value=5)
+
+            # Verify span was created
+            call_kwargs = mock_instance.start_as_current_observation.call_args[1]
+            assert call_kwargs["as_type"] == "span"
+            assert call_kwargs["name"] == "tool:test_tool"
+
+            # Verify output was set
+            mock_span.update.assert_called()
+            assert "10" in result
+        finally:
+            shutdown_tracing()
+
+    def test_dspy_tool_works_without_tracing(self):
+        """Test create_dspy_tool works when tracing_context is None."""
+        from src.prompts.modules.orchestrator import create_dspy_tool
+
+        def test_handler(params):
+            return {"success": True, "result": params.get("value", 0) * 2}
+
+        def test_formatter(result):
+            return f"Result: {result['result']}"
+
+        tool = create_dspy_tool(
+            name="test_tool",
+            description="A test tool",
+            handler=test_handler,
+            formatter=test_formatter,
+            tracing_context=None,
+        )
+
+        result = tool(value=5)
+        assert "10" in result
+
+    @patch("src.tracing.client.Langfuse")
+    def test_delegate_tool_creates_span_with_tracing(self, mock_langfuse_class):
+        """Test create_delegate_tool creates spans when tracing enabled."""
+        from src.prompts.modules.orchestrator import create_delegate_tool
+        from src.tracing import TracingContext
+        from src.tracing.client import init_tracing_client, shutdown_tracing
+        from src.models import (
+            DelegateConfig,
+            DelegateConnection,
+            DelegateCapabilities,
+            DelegateDefaults,
+            ConnectionType,
+            DelegatesConfiguration,
+        )
+
+        mock_instance = MagicMock()
+        mock_context_manager = MagicMock()
+        mock_span = MagicMock()
+        mock_context_manager.__enter__ = MagicMock(return_value=mock_span)
+        mock_context_manager.__exit__ = MagicMock(return_value=None)
+        mock_instance.start_as_current_observation.return_value = mock_context_manager
+        mock_instance.auth_check.return_value = True
+        mock_langfuse_class.return_value = mock_instance
+
+        try:
+            init_tracing_client(public_key="pk-test", secret_key="sk-test")
+
+            ctx = TracingContext(execution_id="test-123")
+
+            config = DelegateConfig(
+                role="test",
+                display_name="Test LLM",
+                description="Test delegate",
+                connection=DelegateConnection(
+                    type=ConnectionType.OPENAI_COMPATIBLE,
+                    base_url="http://test:8000/v1",
+                    model="test-model",
+                ),
+                capabilities=DelegateCapabilities(
+                    context_length=4096,
+                    max_output_tokens=2048,
+                    specializations=["testing"],
+                ),
+                defaults=DelegateDefaults(
+                    temperature=0.7,
+                    max_tokens=1024,
+                ),
+            )
+
+            delegates_config = DelegatesConfiguration(
+                version="1.0",
+                delegates={"test": config},
+            )
+
+            with patch("src.tools.llm_delegate.call_delegate") as mock_call:
+                mock_call.return_value = {
+                    "success": True,
+                    "response": "Delegate response",
+                    "model": "test-model",
+                }
+
+                tool = create_delegate_tool(
+                    role="test",
+                    display_name="Test LLM",
+                    description="Test delegate",
+                    tool_name="ask_test",
+                    delegates_config=delegates_config,
+                    tracing_context=ctx,
+                )
+
+                result = tool(prompt="Test prompt")
+
+                # Verify span was created
+                call_kwargs = mock_instance.start_as_current_observation.call_args[1]
+                assert call_kwargs["as_type"] == "span"
+                assert call_kwargs["name"] == "tool:ask_test"
+
+                # Verify output was set
+                mock_span.update.assert_called()
+                assert "Delegate response" in result
+        finally:
+            shutdown_tracing()
+
+    def test_tool_tracing_graceful_degradation_disabled_context(self):
+        """Test tool tracing gracefully degrades with disabled context."""
+        from src.prompts.modules.orchestrator import create_dspy_tool
+        from src.tracing import TracingContext
+        from src.tracing.client import shutdown_tracing
+
+        shutdown_tracing()
+
+        ctx = TracingContext(execution_id="test-123")
+        # Context is disabled (no tracing client)
+
+        def test_handler(params):
+            return {"value": params.get("x", 0) + 1}
+
+        def test_formatter(result):
+            return f"Value: {result['value']}"
+
+        tool = create_dspy_tool(
+            name="test_tool",
+            description="A test tool",
+            handler=test_handler,
+            formatter=test_formatter,
+            tracing_context=ctx,
+        )
+
+        # Should work without errors
+        result = tool(x=5)
+        assert "6" in result
+
+    def test_tool_span_captures_error_status(self):
+        """Test tool span captures error status on handler failure."""
+        from src.prompts.modules.orchestrator import create_dspy_tool
+        from src.tracing import TracingContext
+        from src.tracing.client import shutdown_tracing
+
+        shutdown_tracing()
+
+        ctx = TracingContext(execution_id="test-123")
+
+        def failing_handler(params):
+            raise ValueError("Test error")
+
+        def test_formatter(result):
+            return str(result)
+
+        tool = create_dspy_tool(
+            name="test_tool",
+            description="A test tool",
+            handler=failing_handler,
+            formatter=test_formatter,
+            tracing_context=ctx,
+        )
+
+        result = tool(value=1)
+        assert "error" in result.lower()
 
 
 class TestOrchestratorTracingWithSpanContextParent:
@@ -981,7 +1312,9 @@ class TestConnectivityValidation:
         assert "tracing disabled" in caplog.text.lower()
 
     @patch("src.tracing.client.Langfuse")
-    def test_client_disabled_when_auth_check_raises_exception(self, mock_langfuse_class, caplog):
+    def test_client_disabled_when_auth_check_raises_exception(
+        self, mock_langfuse_class, caplog
+    ):
         """Test client is disabled when auth_check raises an exception (unreachable endpoint)."""
         from src.tracing.client import TracingClient
         import logging

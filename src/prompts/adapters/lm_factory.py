@@ -6,13 +6,14 @@ configuration for the orchestrator and delegate LLMs.
 """
 
 import logging
-from typing import Optional
+from typing import Any, Optional
 
 import dspy
 
 from ...config import config
 from ...config_loader import load_delegates_config
 from ...models import DelegatesConfiguration
+from ...tracing import TracingContext
 
 logger = logging.getLogger(__name__)
 
@@ -160,3 +161,90 @@ def configure_dspy_default(lm: Optional[dspy.LM] = None) -> None:
         lm = get_orchestrator_lm()
     dspy.configure(lm=lm)
     logger.debug(f"Configured DSPy default LM: {lm}")
+
+
+class TracedLM:
+    """
+    Wrapper that adds Langfuse tracing to DSPy LM calls.
+
+    Intercepts DSPy's LM calls and creates Langfuse generation spans for
+    observability, including prompts, completions, and token usage.
+    """
+
+    def __init__(
+        self,
+        lm: dspy.LM,
+        tracing_context: TracingContext,
+        name: str = "orchestrator",
+    ):
+        """
+        Initialize the traced LM wrapper.
+
+        Args:
+            lm: The underlying DSPy LM instance to wrap
+            tracing_context: Tracing context for creating generation spans
+            name: Name prefix for generation spans (e.g., "orchestrator")
+        """
+        self._lm = lm
+        self._tracing_context = tracing_context
+        self._name = name
+
+    def __call__(
+        self,
+        prompt: Optional[str] = None,
+        messages: Optional[list] = None,
+        **kwargs: Any,
+    ) -> Any:
+        """
+        Call the underlying LM with tracing.
+
+        Args:
+            prompt: Optional prompt string
+            messages: Optional list of messages
+            **kwargs: Additional arguments to pass to the LM
+
+        Returns:
+            The LM response
+        """
+        # Prepare input for tracing
+        if messages:
+            input_data = {"messages": messages}
+        elif prompt:
+            input_data = {"prompt": prompt[:1000] if len(prompt) > 1000 else prompt}
+        else:
+            input_data = {}
+
+        # Extract model parameters for tracing
+        model_params = {}
+        if "temperature" in kwargs:
+            model_params["temperature"] = kwargs["temperature"]
+        if "max_tokens" in kwargs:
+            model_params["max_tokens"] = kwargs["max_tokens"]
+
+        with self._tracing_context.generation(
+            name=f"llm:{self._name}",
+            model=self._lm.model,
+            input=input_data,
+            model_parameters=model_params if model_params else None,
+        ) as gen:
+            result = self._lm(prompt=prompt, messages=messages, **kwargs)
+
+            # Extract and record output
+            output_str = str(result)[:1000] if result else ""
+            gen.set_output(output_str)
+
+            # Try to extract usage from result if available
+            if hasattr(result, "usage"):
+                usage = result.usage
+                if hasattr(usage, "prompt_tokens"):
+                    gen.set_usage(
+                        prompt_tokens=getattr(usage, "prompt_tokens", None),
+                        completion_tokens=getattr(usage, "completion_tokens", None),
+                        total_tokens=getattr(usage, "total_tokens", None),
+                    )
+
+            return result
+
+    def __getattr__(self, name: str) -> Any:
+        """Delegate attribute access to the underlying LM."""
+        return getattr(self._lm, name)
