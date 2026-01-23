@@ -260,103 +260,42 @@ Errors follow the OpenAI error format:
 
 ## Configuration
 
-### Server Settings
+Configuration is managed through two files:
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `SERVER_HOST` | `0.0.0.0` | Server bind address |
-| `SERVER_PORT` | `8000` | Server port |
-| `SERVER_WORKERS` | `1` | Number of worker processes |
-| `SERVER_RELOAD` | `false` | Enable auto-reload (development) |
-| `LOG_LEVEL` | `INFO` | Log level (DEBUG, INFO, WARNING, ERROR) |
+1. **`.env`** - Environment variables for endpoints, API keys, and runtime settings
+2. **`config/delegates.yaml`** - Delegate LLM definitions (roles, capabilities, connection types)
 
-### Orchestrator Settings
+### Quick Setup
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `ORCHESTRATOR_BASE_URL` | `http://localhost:8001/v1` | Main orchestrator LLM endpoint |
-| `ORCHESTRATOR_MODEL` | `nvidia/Nemotron-Orchestrator-8B` | Orchestrator model name |
-| `ORCHESTRATOR_TEMPERATURE` | `0.7` | Sampling temperature |
-| `MAX_ORCHESTRATION_STEPS` | `10` | Maximum ReAct loop iterations |
-
-### Delegate LLMs
-
-Delegate LLMs are configured via `config/delegates.yaml`. Environment variable overrides:
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `REASONING_LLM_BASE_URL` | `http://localhost:30000/v1` | Complex reasoning LLM |
-| `REASONING_LLM_MODEL` | `openai/gpt-oss-120b` | Reasoning model name |
-| `CODING_LLM_BASE_URL` | `http://localhost:8000/v1` | Code generation LLM |
-| `CODING_LLM_MODEL` | `qwen3-coder` | Coding model name |
-| `FAST_LLM_URL` | `http://localhost:11434/v1` | Fast reasoning LLM (Ollama, OpenAI-compatible) |
-| `FAST_LLM_MODEL` | `nemotron-3-nano` | Fast model name |
-
-### Fast-Path Routing
-
-Simple queries can bypass orchestration for faster responses:
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `FAST_PATH_ENABLED` | `true` | Enable fast-path routing |
-
-When enabled, the query router analyzes incoming requests and routes simple queries directly to the LLM without the full ReAct loop.
-
-### Tools
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `SEARXNG_ENDPOINT` | `http://localhost:8080/search` | SearXNG search endpoint |
-| `PYTHON_EXECUTOR_URL` | `http://pyexec.cluster:9999/` | Python executor service |
-| `PYTHON_EXECUTOR_TIMEOUT` | `30` | Python execution timeout (seconds) |
-
-### Observability (Langfuse)
-
-Langfuse tracing auto-enables when both API keys are provided.
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `LANGFUSE_PUBLIC_KEY` | `` | Langfuse public key (pk-lf-...) |
-| `LANGFUSE_SECRET_KEY` | `` | Langfuse secret key (sk-lf-...) |
-| `LANGFUSE_HOST` | `https://cloud.langfuse.com` | Langfuse host URL |
-| `LANGFUSE_FLUSH_AT` | `10` | Batch size before flush |
-| `LANGFUSE_FLUSH_INTERVAL` | `1.0` | Flush interval (seconds) |
-| `LANGFUSE_DEBUG` | `false` | Enable debug logging |
-| `LANGFUSE_OUTPUT_MAX_LENGTH` | `0` | Max output length in traces (0 = unlimited) |
-
-When enabled, traces include:
-- API request lifecycle
-- Query routing decisions
-- Orchestration steps
-- LLM calls (orchestrator and delegates)
-- Tool executions
-
-**Cluster Deployment:** Use the setup script to configure Vault secrets:
 ```bash
-./scripts/langfuse-setup.sh
+# Copy template and edit with your endpoints
+cp .env.template .env
+
+# Edit .env with your LLM endpoints and settings
 ```
 
-### Example Configurations
+### Configuration Files
 
-#### Using Ollama Locally
+| File | Purpose |
+|------|---------|
+| `.env.template` | Template with all available environment variables and defaults |
+| `config/delegates.yaml` | Delegate LLM configuration (supports `openai_compatible` and `ollama` connection types) |
 
-```bash
-ORCHESTRATOR_BASE_URL=http://localhost:11434/v1
-ORCHESTRATOR_MODEL=llama3:8b
-```
+### Delegate Connection Types
 
-#### Using OpenAI
+Delegates in `config/delegates.yaml` support two connection types:
 
-```bash
-ORCHESTRATOR_BASE_URL=https://api.openai.com/v1
-ORCHESTRATOR_MODEL=gpt-4
-```
+- **`openai_compatible`** - For OpenAI-compatible APIs (vLLM, SGLang, Ollama `/v1`, etc.)
+- **`ollama`** - For native Ollama API (`/api/chat`)
 
-#### Using vLLM
-
-```bash
-ORCHESTRATOR_BASE_URL=http://localhost:8000/v1
-ORCHESTRATOR_MODEL=nvidia/Nemotron-Orchestrator-8B
+Example delegate configuration:
+```yaml
+delegates:
+  fast:
+    connection:
+      type: "openai_compatible"  # or "ollama" for native Ollama API
+      base_url: "${FAST_LLM_URL:-http://localhost:11434/v1}"
+      model: "${FAST_LLM_MODEL:-llama3}"
 ```
 
 ## Integration Examples
