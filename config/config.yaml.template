@@ -83,6 +83,7 @@ langfuse:
 
 dspy:
   optimized_prompts_path: ""
+  teacher_max_tokens: 4096  # Max tokens for teacher LLM during optimization
 
 # =============================================================================
 # DELEGATE LLMs

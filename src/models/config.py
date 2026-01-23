@@ -110,6 +110,7 @@ class DSPyConfig:
     """Configuration for DSPy prompt optimization."""
 
     optimized_prompts_path: str = ""
+    teacher_max_tokens: int = 4096
 
 
 @dataclass

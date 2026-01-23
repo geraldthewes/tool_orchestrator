@@ -40,14 +40,16 @@ def get_teacher_lm(
     Create a DSPy LM instance for use as a teacher model in DSPy optimization.
 
     Configuration priority (highest to lowest):
-    1. Function parameters (base_url, model)
-    2. Environment variables (TEACHER_BASE_URL, TEACHER_MODEL)
+    1. Function parameters (base_url, model, max_tokens)
+    2. Environment variables (TEACHER_BASE_URL, TEACHER_MODEL, TEACHER_MAX_TOKENS)
+    3. Config file (dspy.teacher_max_tokens)
+    4. Default (4096 for max_tokens)
 
     Args:
         base_url: Override base URL (uses TEACHER_BASE_URL env var if None)
         model: Override model name (uses TEACHER_MODEL env var if None)
         temperature: Override temperature (defaults to 0.7 if None)
-        max_tokens: Override max tokens (defaults to 1024 if None)
+        max_tokens: Override max tokens (priority: param > env > config > 4096)
 
     Returns:
         Configured DSPy LM instance for teacher
@@ -71,6 +73,16 @@ def get_teacher_lm(
 
     temp = temperature if temperature is not None else 0.7
 
+    # Resolve max_tokens: param > env > config > default
+    if max_tokens is not None:
+        resolved_max_tokens = max_tokens
+    else:
+        env_max_tokens = os.environ.get("TEACHER_MAX_TOKENS")
+        if env_max_tokens:
+            resolved_max_tokens = int(env_max_tokens)
+        else:
+            resolved_max_tokens = config.dspy.teacher_max_tokens
+
     # Build the full model identifier for DSPy
     # DSPy uses "openai/<model>" format for OpenAI-compatible endpoints
     model_id = f"openai/{resolved_model}"
@@ -86,7 +98,7 @@ def get_teacher_lm(
         api_base=resolved_base_url,
         api_key="not-needed",  # Most local deployments don't need keys
         temperature=temp,
-        max_tokens=max_tokens or 1024,
+        max_tokens=resolved_max_tokens,
     )
 
     return lm

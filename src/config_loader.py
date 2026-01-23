@@ -318,6 +318,7 @@ def _parse_dspy_config(data: dict) -> DSPyConfig:
     """Parse DSPy configuration from dict."""
     return DSPyConfig(
         optimized_prompts_path=data.get("optimized_prompts_path", ""),
+        teacher_max_tokens=int(data.get("teacher_max_tokens", 4096)),
     )
 
 
