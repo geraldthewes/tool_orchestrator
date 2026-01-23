@@ -6,6 +6,7 @@ configuration for the orchestrator and delegate LLMs.
 """
 
 import logging
+import os
 from typing import Any, Optional
 
 import dspy
@@ -27,6 +28,67 @@ def _get_delegates_config() -> DelegatesConfiguration:
     if _delegates_config is None:
         _delegates_config = get_delegates_from_app_config()
     return _delegates_config
+
+
+def get_teacher_lm(
+    base_url: Optional[str] = None,
+    model: Optional[str] = None,
+    temperature: Optional[float] = None,
+    max_tokens: Optional[int] = None,
+) -> dspy.LM:
+    """
+    Create a DSPy LM instance for use as a teacher model in DSPy optimization.
+
+    Configuration priority (highest to lowest):
+    1. Function parameters (base_url, model)
+    2. Environment variables (TEACHER_BASE_URL, TEACHER_MODEL)
+
+    Args:
+        base_url: Override base URL (uses TEACHER_BASE_URL env var if None)
+        model: Override model name (uses TEACHER_MODEL env var if None)
+        temperature: Override temperature (defaults to 0.7 if None)
+        max_tokens: Override max tokens (defaults to 1024 if None)
+
+    Returns:
+        Configured DSPy LM instance for teacher
+
+    Raises:
+        ValueError: If teacher config is missing (no base_url or model)
+    """
+    resolved_base_url = base_url or os.environ.get("TEACHER_BASE_URL")
+    resolved_model = model or os.environ.get("TEACHER_MODEL")
+
+    if not resolved_base_url:
+        raise ValueError(
+            "Teacher LLM base URL not configured. "
+            "Set TEACHER_BASE_URL environment variable or pass --teacher-base-url"
+        )
+    if not resolved_model:
+        raise ValueError(
+            "Teacher LLM model not configured. "
+            "Set TEACHER_MODEL environment variable or pass --teacher-model"
+        )
+
+    temp = temperature if temperature is not None else 0.7
+
+    # Build the full model identifier for DSPy
+    # DSPy uses "openai/<model>" format for OpenAI-compatible endpoints
+    model_id = f"openai/{resolved_model}"
+
+    logger.debug(
+        f"Creating teacher LM: model={model_id}, "
+        f"base_url={resolved_base_url}, temperature={temp}"
+    )
+
+    lm = dspy.LM(
+        model=model_id,
+        api_base=resolved_base_url,
+        api_key="not-needed",  # Most local deployments don't need keys
+        temperature=temp,
+        max_tokens=max_tokens or 1024,
+    )
+
+    return lm
 
 
 def get_orchestrator_lm(

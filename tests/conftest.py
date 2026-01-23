@@ -32,6 +32,14 @@ def mock_orchestrator_lm(mock_dspy_lm):
 
 
 @pytest.fixture
+def mock_teacher_lm(mock_dspy_lm):
+    """Mock the get_teacher_lm function."""
+    with patch("src.prompts.adapters.lm_factory.get_teacher_lm") as mock_get:
+        mock_get.return_value = mock_dspy_lm
+        yield mock_get
+
+
+@pytest.fixture
 def mock_delegate_lm(mock_dspy_lm):
     """Mock the get_delegate_lm function."""
     with patch("src.prompts.adapters.lm_factory.get_delegate_lm") as mock_get:

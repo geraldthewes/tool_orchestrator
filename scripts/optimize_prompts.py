@@ -107,6 +107,14 @@ def parse_args():
         action="store_true",
         help="Enable verbose logging",
     )
+    parser.add_argument(
+        "--teacher-base-url",
+        help="Base URL for teacher LLM (overrides TEACHER_BASE_URL env var)",
+    )
+    parser.add_argument(
+        "--teacher-model",
+        help="Model name for teacher LLM (overrides TEACHER_MODEL env var)",
+    )
     return parser.parse_args()
 
 
@@ -243,6 +251,8 @@ def main():
     optimizer = PromptOptimizer(
         strategy=args.strategy,
         gepa_auto=args.gepa_auto,
+        teacher_base_url=args.teacher_base_url,
+        teacher_model=args.teacher_model,
     )
 
     saved_paths = {}

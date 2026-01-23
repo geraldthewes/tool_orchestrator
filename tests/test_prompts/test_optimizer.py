@@ -44,7 +44,7 @@ class TestPromptOptimizer:
         optimizer = PromptOptimizer()
         assert optimizer.gepa_auto == "light"
 
-    @patch("src.prompts.optimization.optimizer.get_orchestrator_lm")
+    @patch("src.prompts.optimization.optimizer.get_teacher_lm")
     @patch("src.prompts.optimization.optimizer.GEPA")
     def test_gepa_optimization(self, mock_gepa_class, mock_get_lm):
         """Test GEPA optimization flow."""
@@ -69,7 +69,7 @@ class TestPromptOptimizer:
         mock_optimizer.compile.assert_called_once()
         assert result is mock_optimized
 
-    @patch("src.prompts.optimization.optimizer.get_orchestrator_lm")
+    @patch("src.prompts.optimization.optimizer.get_teacher_lm")
     @patch("src.prompts.optimization.optimizer.GEPA")
     def test_gepa_with_devset(self, mock_gepa_class, mock_get_lm):
         """Test GEPA optimization with validation set."""
@@ -91,7 +91,7 @@ class TestPromptOptimizer:
         assert "valset" in compile_call[1]
         assert compile_call[1]["valset"] is devset
 
-    @patch("src.prompts.optimization.optimizer.get_orchestrator_lm")
+    @patch("src.prompts.optimization.optimizer.get_teacher_lm")
     @patch("src.prompts.optimization.optimizer.GEPA")
     def test_gepa_with_custom_reflection_lm(self, mock_gepa_class, mock_get_lm):
         """Test GEPA with custom reflection LM."""
@@ -112,7 +112,7 @@ class TestPromptOptimizer:
         call_kwargs = mock_gepa_class.call_args[1]
         assert call_kwargs["reflection_lm"] is reflection_lm
 
-    @patch("src.prompts.optimization.optimizer.get_orchestrator_lm")
+    @patch("src.prompts.optimization.optimizer.get_teacher_lm")
     @patch("src.prompts.optimization.optimizer.BootstrapFewShot")
     def test_bootstrap_optimization(self, mock_bootstrap_class, mock_get_lm):
         """Test BootstrapFewShot optimization flow."""
@@ -135,7 +135,7 @@ class TestPromptOptimizer:
         assert call_kwargs["max_bootstrapped_demos"] == 8
         assert result is mock_optimized
 
-    @patch("src.prompts.optimization.optimizer.get_orchestrator_lm")
+    @patch("src.prompts.optimization.optimizer.get_teacher_lm")
     @patch("src.prompts.optimization.optimizer.MIPROv2")
     def test_mipro_optimization(self, mock_mipro_class, mock_get_lm):
         """Test MIPROv2 optimization flow."""
@@ -172,7 +172,7 @@ class TestOptimizeOrchestrator:
 
     @patch("src.prompts.optimization.optimizer.load_all_training_examples")
     @patch("src.prompts.optimization.optimizer.get_train_dev_split")
-    @patch("src.prompts.optimization.optimizer.get_orchestrator_lm")
+    @patch("src.prompts.optimization.optimizer.get_teacher_lm")
     @patch("src.prompts.optimization.optimizer.GEPA")
     def test_auto_loads_training_examples(
         self, mock_gepa, mock_get_lm, mock_split, mock_load
@@ -196,7 +196,7 @@ class TestOptimizeOrchestrator:
 
     @patch("src.prompts.optimization.optimizer.load_orchestration_dataset")
     @patch("src.prompts.optimization.optimizer.load_all_training_examples")
-    @patch("src.prompts.optimization.optimizer.get_orchestrator_lm")
+    @patch("src.prompts.optimization.optimizer.get_teacher_lm")
     @patch("src.prompts.optimization.optimizer.BootstrapFewShot")
     def test_falls_back_to_legacy_dataset(
         self, mock_bootstrap, mock_get_lm, mock_load_all, mock_load_legacy
@@ -216,7 +216,7 @@ class TestOptimizeOrchestrator:
 
         mock_load_legacy.assert_called_once()
 
-    @patch("src.prompts.optimization.optimizer.get_orchestrator_lm")
+    @patch("src.prompts.optimization.optimizer.get_teacher_lm")
     def test_returns_module_when_no_data(self, mock_get_lm):
         """Test returns original module when no training data."""
         mock_get_lm.return_value = MagicMock()

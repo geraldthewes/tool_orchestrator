@@ -20,7 +20,7 @@ from .datasets import (
     load_all_training_examples,
     get_train_dev_split,
 )
-from ..adapters import get_orchestrator_lm
+from ..adapters import get_teacher_lm
 
 logger = logging.getLogger(__name__)
 
@@ -58,6 +58,8 @@ class PromptOptimizer:
         gepa_auto: Literal["light", "medium", "heavy"] = "light",
         checkpoint_dir: Optional[Path] = None,
         resume_from: Optional[Path] = None,
+        teacher_base_url: Optional[str] = None,
+        teacher_model: Optional[str] = None,
     ):
         """
         Initialize the optimizer.
@@ -71,6 +73,8 @@ class PromptOptimizer:
             gepa_auto: GEPA preset ("light", "medium", "heavy")
             checkpoint_dir: Directory to save checkpoints (enables checkpointing)
             resume_from: Path to checkpoint to resume from
+            teacher_base_url: Base URL for teacher LLM (overrides TEACHER_BASE_URL env)
+            teacher_model: Model name for teacher LLM (overrides TEACHER_MODEL env)
         """
         self.strategy = strategy
         self.metric = metric
@@ -80,6 +84,8 @@ class PromptOptimizer:
         self.gepa_auto = gepa_auto
         self.checkpoint_dir = Path(checkpoint_dir) if checkpoint_dir else None
         self.resume_from = Path(resume_from) if resume_from else None
+        self.teacher_base_url = teacher_base_url
+        self.teacher_model = teacher_model
 
     def optimize_router(
         self,
@@ -114,7 +120,10 @@ class PromptOptimizer:
             return module
 
         metric = self.metric or routing_accuracy
-        teacher = teacher_lm or get_orchestrator_lm()
+        teacher = teacher_lm or get_teacher_lm(
+            base_url=self.teacher_base_url,
+            model=self.teacher_model,
+        )
 
         return self._optimize(
             module, trainset, metric, teacher, devset=devset, module_name="router"
@@ -158,7 +167,10 @@ class PromptOptimizer:
             return module
 
         metric = self.metric or orchestration_quality
-        teacher = teacher_lm or get_orchestrator_lm()
+        teacher = teacher_lm or get_teacher_lm(
+            base_url=self.teacher_base_url,
+            model=self.teacher_model,
+        )
 
         return self._optimize(
             module, trainset, metric, teacher, devset=devset, module_name="orchestrator"
