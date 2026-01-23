@@ -2,7 +2,7 @@
 
 # Service Registration
 SERVICE_NAME := tool-orchestrator
-SERVICE_URL := http://tool-orchestrator.service.consul:9999
+SERVICE_URL := http://tool-orchestrator.cluster:9999/v1
 SERVICE_DESC := LLM tool orchestration framework using ReAct-style reasoning
 SERVICE_SOURCE := https://github.com/geraldthewes/tool_orchestrator
 
