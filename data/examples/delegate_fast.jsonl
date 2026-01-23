@@ -1,0 +1,5 @@
+{"question": "Summarize in 5 words: The quick brown fox jumps over the lazy dog", "answer": "Fox jumps over lazy dog.", "expected_keywords": ["fox", "jumps", "dog"], "tool": "ask_fast", "category": "delegate"}
+{"question": "Convert to uppercase: hello world", "answer": "HELLO WORLD", "expected_keywords": ["HELLO", "WORLD"], "tool": "ask_fast", "category": "delegate"}
+{"question": "Extract the numbers from: 'I have 3 apples and 5 oranges'", "answer": "3, 5", "expected_keywords": ["3", "5"], "tool": "ask_fast", "category": "delegate"}
+{"question": "Translate 'hello' to French", "answer": "Bonjour", "expected_keywords": ["Bonjour"], "tool": "ask_fast", "category": "delegate"}
+{"question": "What's the sentiment of: 'This product is amazing!'", "answer": "Positive sentiment", "expected_keywords": ["positive"], "tool": "ask_fast", "category": "delegate"}

@@ -1,0 +1,25 @@
+{"question": "What is 15 * 23?", "answer": "15 * 23 = 345", "expected_keywords": ["345"], "tool": "calculate", "category": "single_tool"}
+{"question": "Calculate 1000 / 8", "answer": "1000 / 8 = 125", "expected_keywords": ["125"], "tool": "calculate", "category": "single_tool"}
+{"question": "What is 47 + 89 + 156?", "answer": "47 + 89 + 156 = 292", "expected_keywords": ["292"], "tool": "calculate", "category": "single_tool"}
+{"question": "Calculate 999 - 567", "answer": "999 - 567 = 432", "expected_keywords": ["432"], "tool": "calculate", "category": "single_tool"}
+{"question": "What is 12 * 12 * 12?", "answer": "12 * 12 * 12 = 1728", "expected_keywords": ["1728"], "tool": "calculate", "category": "single_tool"}
+{"question": "Calculate 5678 + 4322", "answer": "5678 + 4322 = 10000", "expected_keywords": ["10000"], "tool": "calculate", "category": "single_tool"}
+{"question": "What is 2^16?", "answer": "2^16 = 65536", "expected_keywords": ["65536"], "tool": "calculate", "category": "single_tool"}
+{"question": "Calculate sqrt(144)", "answer": "sqrt(144) = 12", "expected_keywords": ["12"], "tool": "calculate", "category": "single_tool"}
+{"question": "What is 3^8?", "answer": "3^8 = 6561", "expected_keywords": ["6561"], "tool": "calculate", "category": "single_tool"}
+{"question": "Calculate the cube root of 27", "answer": "The cube root of 27 is 3", "expected_keywords": ["3"], "tool": "calculate", "category": "single_tool"}
+{"question": "What is sqrt(256)?", "answer": "sqrt(256) = 16", "expected_keywords": ["16"], "tool": "calculate", "category": "single_tool"}
+{"question": "What is sin(pi/4)?", "answer": "sin(pi/4) \u2248 0.7071", "expected_keywords": ["0.707"], "tool": "calculate", "category": "single_tool"}
+{"question": "Calculate cos(60 degrees)", "answer": "cos(60\u00b0) = 0.5", "expected_keywords": ["0.5"], "tool": "calculate", "category": "single_tool"}
+{"question": "What is tan(45 degrees)?", "answer": "tan(45\u00b0) = 1", "expected_keywords": ["1"], "tool": "calculate", "category": "single_tool"}
+{"question": "Calculate sin(30 degrees)", "answer": "sin(30\u00b0) = 0.5", "expected_keywords": ["0.5"], "tool": "calculate", "category": "single_tool"}
+{"question": "What is the factorial of 10?", "answer": "10! = 3628800", "expected_keywords": ["3628800"], "tool": "calculate", "category": "single_tool"}
+{"question": "Calculate log(1000)", "answer": "log10(1000) = 3", "expected_keywords": ["3"], "tool": "calculate", "category": "single_tool"}
+{"question": "What is the natural log of e^5?", "answer": "ln(e^5) = 5", "expected_keywords": ["5"], "tool": "calculate", "category": "single_tool"}
+{"question": "Calculate 7 factorial", "answer": "7! = 5040", "expected_keywords": ["5040"], "tool": "calculate", "category": "single_tool"}
+{"question": "What is log2(1024)?", "answer": "log2(1024) = 10", "expected_keywords": ["10"], "tool": "calculate", "category": "single_tool"}
+{"question": "What is e^2?", "answer": "e^2 \u2248 7.389", "expected_keywords": ["7.38", "7.39"], "tool": "calculate", "category": "single_tool"}
+{"question": "Calculate 2 * pi * 5", "answer": "2 * pi * 5 \u2248 31.416 (circumference of circle with radius 5)", "expected_keywords": ["31.4"], "tool": "calculate", "category": "single_tool"}
+{"question": "Calculate (sqrt(16) + 2^3) / 4", "answer": "(sqrt(16) + 2^3) / 4 = (4 + 8) / 4 = 3", "expected_keywords": ["3"], "tool": "calculate", "category": "single_tool"}
+{"question": "What is pi * 3^2?", "answer": "pi * 3^2 = pi * 9 \u2248 28.274", "expected_keywords": ["28.27"], "tool": "calculate", "category": "single_tool"}
+{"question": "Calculate the area of a circle with radius 10", "answer": "Area = pi * r^2 = pi * 100 \u2248 314.159", "expected_keywords": ["314"], "tool": "calculate", "category": "single_tool"}
