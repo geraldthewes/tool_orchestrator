@@ -6,7 +6,7 @@ SERVICE_URL := http://tool-orchestrator.service.consul:9999
 SERVICE_DESC := LLM tool orchestration framework using ReAct-style reasoning
 SERVICE_SOURCE := https://github.com/geraldthewes/tool_orchestrator
 
-.PHONY: help install setup test lint format clean interactive query check-endpoint server server-dev build deploy restart status unregister smoke-test
+.PHONY: help install setup test lint format clean interactive query check-endpoint server server-dev build deploy restart status unregister smoke-test push-config
 
 help:
 	@echo "ToolOrchestra Commands:"
@@ -36,6 +36,7 @@ help:
 	@echo "  make restart       - Restart running allocations to pull new image"
 	@echo "  make status        - Check deployment status"
 	@echo "  make smoke-test    - Run post-deployment smoke tests"
+	@echo "  make push-config   - Push config.yaml to Consul KV"
 	@echo "  make unregister    - Remove service from cluster registry"
 	@echo ""
 
@@ -118,3 +119,9 @@ status:
 smoke-test:
 	@echo "Running post-deployment smoke tests against $(SERVICE_URL)..."
 	python scripts/post_deploy_tests/test_smoke.py $(SERVICE_URL)
+
+push-config:
+	@if [ ! -f config/config.yaml ]; then echo "Error: config/config.yaml not found"; exit 1; fi
+	@echo "Pushing config.yaml to Consul KV..."
+	consul kv put config/tool-orchestrator/config.yaml @config/config.yaml
+	@echo "Config pushed successfully"

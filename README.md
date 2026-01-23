@@ -538,6 +538,7 @@ make clean         # Remove cache files
 make interactive   # Start interactive CLI
 make query Q="..." # Run a single query
 make check-endpoint # Test the orchestrator endpoint
+make push-config   # Push config.yaml to Consul KV (required before first build)
 ```
 
 ### Running Tests
