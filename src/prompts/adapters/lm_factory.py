@@ -163,12 +163,12 @@ def configure_dspy_default(lm: Optional[dspy.LM] = None) -> None:
     logger.debug(f"Configured DSPy default LM: {lm}")
 
 
-class TracedLM:
+class TracedLM(dspy.LM):
     """
     Wrapper that adds Langfuse tracing to DSPy LM calls.
 
-    Intercepts DSPy's LM calls and creates Langfuse generation spans for
-    observability, including prompts, completions, and token usage.
+    Inherits from dspy.LM to pass isinstance checks while delegating
+    actual LLM calls to a wrapped LM instance.
     """
 
     def __init__(
@@ -185,18 +185,31 @@ class TracedLM:
             tracing_context: Tracing context for creating generation spans
             name: Name prefix for generation spans (e.g., "orchestrator")
         """
-        self._lm = lm
-        self._tracing_context = tracing_context
-        self._name = name
+        # Don't call super().__init__() - we're wrapping an existing LM
+        # Instead, copy required attributes from the wrapped LM
+        object.__setattr__(self, "_lm", lm)
+        object.__setattr__(self, "_tracing_context", tracing_context)
+        object.__setattr__(self, "_name", name)
 
-    def __call__(
+        # Copy core attributes from wrapped LM to satisfy BaseLM interface
+        # These are checked by DSPy internals
+        self.model = lm.model
+        self.cache = lm.cache
+        self.history = lm.history
+        self.callbacks = lm.callbacks
+        self.kwargs = lm.kwargs
+
+    def forward(
         self,
         prompt: Optional[str] = None,
         messages: Optional[list] = None,
         **kwargs: Any,
     ) -> Any:
         """
-        Call the underlying LM with tracing.
+        Override forward() to add tracing around the actual LM call.
+
+        DSPy's BaseLM.__call__ invokes forward() internally, so this is
+        the correct place to add tracing.
 
         Args:
             prompt: Optional prompt string
@@ -227,7 +240,8 @@ class TracedLM:
             input=input_data,
             model_parameters=model_params if model_params else None,
         ) as gen:
-            result = self._lm(prompt=prompt, messages=messages, **kwargs)
+            # Call the underlying LM's forward method
+            result = self._lm.forward(prompt=prompt, messages=messages, **kwargs)
 
             # Extract and record output
             output_str = str(result)[:1000] if result else ""
@@ -247,4 +261,22 @@ class TracedLM:
 
     def __getattr__(self, name: str) -> Any:
         """Delegate attribute access to the underlying LM."""
-        return getattr(self._lm, name)
+        # Use object.__getattribute__ to avoid recursion
+        lm = object.__getattribute__(self, "_lm")
+        return getattr(lm, name)
+
+    def __setattr__(self, name: str, value: Any) -> None:
+        """Handle attribute setting - core attrs go to self, others to wrapped LM."""
+        if name in (
+            "_lm",
+            "_tracing_context",
+            "_name",
+            "model",
+            "cache",
+            "history",
+            "callbacks",
+            "kwargs",
+        ):
+            object.__setattr__(self, name, value)
+        else:
+            setattr(self._lm, name, value)

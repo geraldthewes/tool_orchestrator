@@ -945,6 +945,27 @@ class TestLangfuseEndpointConfiguration:
 class TestTracedLM:
     """Tests for TracedLM wrapper."""
 
+    def test_traced_lm_is_instance_of_base_lm(self):
+        """Verify TracedLM passes DSPy's isinstance check."""
+        import dspy
+        from src.prompts.adapters.lm_factory import TracedLM
+        from src.tracing import TracingContext
+        from src.tracing.client import shutdown_tracing
+
+        shutdown_tracing()
+
+        mock_lm = MagicMock(spec=dspy.LM)
+        mock_lm.model = "test-model"
+        mock_lm.cache = False
+        mock_lm.history = []
+        mock_lm.callbacks = []
+        mock_lm.kwargs = {}
+
+        traced_lm = TracedLM(mock_lm, TracingContext(execution_id="test-123"), "test")
+
+        assert isinstance(traced_lm, dspy.BaseLM)
+        assert isinstance(traced_lm, dspy.LM)
+
     def test_traced_lm_delegates_attributes(self):
         """Test TracedLM delegates attribute access to underlying LM."""
         from src.prompts.adapters.lm_factory import TracedLM
@@ -955,6 +976,10 @@ class TestTracedLM:
 
         mock_lm = MagicMock()
         mock_lm.model = "test-model"
+        mock_lm.cache = False
+        mock_lm.history = []
+        mock_lm.callbacks = []
+        mock_lm.kwargs = {}
         mock_lm.temperature = 0.7
 
         ctx = TracingContext(execution_id="test-123")
@@ -964,7 +989,7 @@ class TestTracedLM:
         assert traced.temperature == 0.7
 
     def test_traced_lm_calls_underlying_lm(self):
-        """Test TracedLM calls the underlying LM."""
+        """Test TracedLM calls the underlying LM's forward method."""
         from src.prompts.adapters.lm_factory import TracedLM
         from src.tracing import TracingContext
         from src.tracing.client import shutdown_tracing
@@ -973,14 +998,18 @@ class TestTracedLM:
 
         mock_lm = MagicMock()
         mock_lm.model = "test-model"
-        mock_lm.return_value = "test response"
+        mock_lm.cache = False
+        mock_lm.history = []
+        mock_lm.callbacks = []
+        mock_lm.kwargs = {}
+        mock_lm.forward.return_value = "test response"
 
         ctx = TracingContext(execution_id="test-123")
         traced = TracedLM(mock_lm, ctx, "test")
 
-        result = traced(prompt="test prompt")
+        result = traced.forward(prompt="test prompt")
 
-        mock_lm.assert_called_once_with(prompt="test prompt", messages=None)
+        mock_lm.forward.assert_called_once_with(prompt="test prompt", messages=None)
         assert result == "test response"
 
     def test_traced_lm_with_messages(self):
@@ -993,15 +1022,19 @@ class TestTracedLM:
 
         mock_lm = MagicMock()
         mock_lm.model = "test-model"
-        mock_lm.return_value = "test response"
+        mock_lm.cache = False
+        mock_lm.history = []
+        mock_lm.callbacks = []
+        mock_lm.kwargs = {}
+        mock_lm.forward.return_value = "test response"
 
         ctx = TracingContext(execution_id="test-123")
         traced = TracedLM(mock_lm, ctx, "test")
 
         messages = [{"role": "user", "content": "hello"}]
-        result = traced(messages=messages)
+        result = traced.forward(messages=messages)
 
-        mock_lm.assert_called_once_with(prompt=None, messages=messages)
+        mock_lm.forward.assert_called_once_with(prompt=None, messages=messages)
         assert result == "test response"
 
     @patch("src.tracing.client.Langfuse")
@@ -1025,12 +1058,16 @@ class TestTracedLM:
 
             mock_lm = MagicMock()
             mock_lm.model = "test-model"
-            mock_lm.return_value = "test response"
+            mock_lm.cache = False
+            mock_lm.history = []
+            mock_lm.callbacks = []
+            mock_lm.kwargs = {}
+            mock_lm.forward.return_value = "test response"
 
             ctx = TracingContext(execution_id="test-123")
             traced = TracedLM(mock_lm, ctx, "orchestrator")
 
-            traced(prompt="test prompt", temperature=0.5)
+            traced.forward(prompt="test prompt", temperature=0.5)
 
             # Verify generation was created
             call_kwargs = mock_instance.start_as_current_observation.call_args[1]
