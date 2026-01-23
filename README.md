@@ -560,6 +560,69 @@ pytest tests/test_tools.py -v
 pytest tests/test_orchestration.py -v
 ```
 
+### Prompt Optimization
+
+ToolOrchestra uses [DSPy](https://dspy.ai/) for declarative prompt programming. The project includes 150+ training examples and supports automatic prompt optimization using GEPA (Genetic-Pareto optimization).
+
+**Why GEPA?**
+
+| Optimizer | Strengths | When to Use |
+|-----------|-----------|-------------|
+| **GEPA** | Outperforms MIPROv2 by 10%+, 35x fewer rollouts than GRPO, trajectory reflection | Best for ReAct-style programs, moderate datasets (50-200 examples) |
+| MIPROv2 | Good for larger datasets, Bayesian optimization | Fallback if GEPA unavailable |
+| BootstrapFewShot | Simple, fast, good starting point | Small datasets (~10 examples) |
+
+**Running Optimization:**
+
+```bash
+# Dry run to verify examples load correctly
+python scripts/optimize_prompts.py --dry-run
+
+# Run GEPA optimization (default)
+python scripts/optimize_prompts.py
+
+# With specific options
+python scripts/optimize_prompts.py --strategy gepa --gepa-auto medium --output-dir data/optimized_prompts
+
+# Only optimize orchestrator module
+python scripts/optimize_prompts.py --module orchestrator
+
+# Use bootstrap for faster/simpler optimization
+python scripts/optimize_prompts.py --strategy bootstrap
+```
+
+**CLI Options:**
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `--strategy` | `gepa` | Optimization strategy (`gepa`, `mipro`, `bootstrap`) |
+| `--output-dir` | `data/optimized_prompts` | Directory to save optimized modules |
+| `--module` | `all` | Module to optimize (`all`, `orchestrator`, `router`) |
+| `--gepa-auto` | `light` | GEPA preset (`light`, `medium`, `heavy`) |
+| `--dev-ratio` | `0.8` | Ratio of examples for validation set |
+| `--dry-run` | - | Show what would be done without running |
+| `-v` | - | Enable verbose logging |
+
+**Programmatic Usage:**
+
+```python
+from src.prompts.optimization import PromptOptimizer, load_all_training_examples
+from src.prompts.modules import ToolOrchestratorModule
+
+# Load training examples
+examples = load_all_training_examples()
+
+# Create optimizer with GEPA strategy
+optimizer = PromptOptimizer(strategy="gepa", gepa_auto="light")
+
+# Optimize orchestrator module
+module = ToolOrchestratorModule()
+optimized = optimizer.optimize_orchestrator(module, trainset=examples)
+
+# Save optimized module
+PromptOptimizer.save(optimized, "data/optimized_prompts/orchestrator.json")
+```
+
 ## Project Structure
 
 ```
@@ -570,11 +633,15 @@ tool_orchestrator/
 ├── .env.template                # Environment template
 ├── config/
 │   └── delegates.yaml           # Delegate LLM definitions
+├── data/
+│   ├── examples/                # DSPy training examples (150+)
+│   └── optimized_prompts/       # Optimized module outputs
 ├── deploy/
 │   ├── build.yaml               # JobForge build config
 │   └── tool-orchestrator.nomad  # Nomad job specification
 ├── scripts/
-│   └── langfuse-setup.sh        # Langfuse/Vault setup script
+│   ├── langfuse-setup.sh        # Langfuse/Vault setup script
+│   └── optimize_prompts.py      # DSPy prompt optimization CLI
 ├── src/
 │   ├── __init__.py
 │   ├── config.py                # Configuration management
@@ -595,6 +662,10 @@ tool_orchestrator/
 │   │   ├── python_executor.py   # Safe Python execution
 │   │   ├── math_solver.py       # Math expressions
 │   │   └── llm_delegate.py      # LLM delegation
+│   ├── prompts/                 # DSPy prompt programming
+│   │   ├── modules/             # DSPy modules (router, orchestrator)
+│   │   ├── optimization/        # GEPA/MIPROv2/Bootstrap optimizers
+│   │   └── adapters/            # LM adapters for DSPy
 │   └── tracing/                 # Langfuse observability
 │       ├── __init__.py
 │       ├── client.py            # Langfuse client wrapper
