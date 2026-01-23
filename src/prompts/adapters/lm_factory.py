@@ -75,9 +75,10 @@ def get_teacher_lm(
     # DSPy uses "openai/<model>" format for OpenAI-compatible endpoints
     model_id = f"openai/{resolved_model}"
 
-    logger.debug(
+    full_url = f"{resolved_base_url.rstrip('/')}/chat/completions"
+    logger.info(
         f"Creating teacher LM: model={model_id}, "
-        f"base_url={resolved_base_url}, temperature={temp}"
+        f"endpoint={full_url}, temperature={temp}"
     )
 
     lm = dspy.LM(
@@ -115,9 +116,10 @@ def get_orchestrator_lm(
     # DSPy uses "openai/<model>" format for OpenAI-compatible endpoints
     model_id = f"openai/{model}"
 
-    logger.debug(
+    full_url = f"{base_url.rstrip('/')}/chat/completions"
+    logger.info(
         f"Creating orchestrator LM: model={model_id}, "
-        f"base_url={base_url}, temperature={temp}"
+        f"endpoint={full_url}, temperature={temp}"
     )
 
     lm = dspy.LM(
@@ -179,9 +181,10 @@ def get_delegate_lm(
     # Build model identifier
     model_id = f"openai/{conn.model}"
 
-    logger.debug(
+    full_url = f"{conn.base_url.rstrip('/')}/chat/completions"
+    logger.info(
         f"Creating delegate LM for '{role}': model={model_id}, "
-        f"base_url={conn.base_url}, temperature={temp}"
+        f"endpoint={full_url}, temperature={temp}"
     )
 
     lm = dspy.LM(
