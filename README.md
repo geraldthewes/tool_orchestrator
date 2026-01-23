@@ -554,6 +554,15 @@ python scripts/optimize_prompts.py --module orchestrator
 
 # Use bootstrap for faster/simpler optimization
 python scripts/optimize_prompts.py --strategy bootstrap
+
+# With checkpointing (enabled by default)
+python scripts/optimize_prompts.py --checkpoint-dir data/checkpoints
+
+# Resume from best checkpoint
+python scripts/optimize_prompts.py --resume --checkpoint-dir data/checkpoints
+
+# Disable checkpointing
+python scripts/optimize_prompts.py --no-checkpoint
 ```
 
 **CLI Options:**
@@ -565,6 +574,9 @@ python scripts/optimize_prompts.py --strategy bootstrap
 | `--module` | `all` | Module to optimize (`all`, `orchestrator`, `router`) |
 | `--gepa-auto` | `light` | GEPA preset (`light`, `medium`, `heavy`) |
 | `--dev-ratio` | `0.8` | Ratio of examples for validation set |
+| `--checkpoint-dir` | `data/optimized_prompts/checkpoints` | Directory to save checkpoints |
+| `--resume` | - | Resume from best checkpoint if available |
+| `--no-checkpoint` | - | Disable checkpointing |
 | `--dry-run` | - | Show what would be done without running |
 | `-v` | - | Enable verbose logging |
 
