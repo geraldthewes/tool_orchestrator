@@ -12,6 +12,18 @@ from typing import Optional, Callable, Literal
 import dspy
 from dspy.teleprompt import BootstrapFewShot, MIPROv2, GEPA
 
+from .checkpoint import CheckpointManager
+from .metrics import routing_accuracy, orchestration_quality
+from .datasets import (
+    load_routing_dataset,
+    load_orchestration_dataset,
+    load_all_training_examples,
+    get_train_dev_split,
+)
+from ..adapters import get_orchestrator_lm
+
+logger = logging.getLogger(__name__)
+
 
 def _wrap_metric_for_gepa(metric: Callable) -> Callable:
     """
@@ -26,17 +38,6 @@ def _wrap_metric_for_gepa(metric: Callable) -> Callable:
         return metric(gold, pred)
 
     return gepa_metric
-
-from .metrics import routing_accuracy, orchestration_quality
-from .datasets import (
-    load_routing_dataset,
-    load_orchestration_dataset,
-    load_all_training_examples,
-    get_train_dev_split,
-)
-from ..adapters import get_orchestrator_lm
-
-logger = logging.getLogger(__name__)
 
 
 class PromptOptimizer:
@@ -55,6 +56,8 @@ class PromptOptimizer:
         max_labeled_demos: int = 16,
         reflection_lm: Optional[dspy.LM] = None,
         gepa_auto: Literal["light", "medium", "heavy"] = "light",
+        checkpoint_dir: Optional[Path] = None,
+        resume_from: Optional[Path] = None,
     ):
         """
         Initialize the optimizer.
@@ -66,6 +69,8 @@ class PromptOptimizer:
             max_labeled_demos: Max labeled demos for MIPROv2
             reflection_lm: Reflection LM for GEPA (uses teacher if None)
             gepa_auto: GEPA preset ("light", "medium", "heavy")
+            checkpoint_dir: Directory to save checkpoints (enables checkpointing)
+            resume_from: Path to checkpoint to resume from
         """
         self.strategy = strategy
         self.metric = metric
@@ -73,6 +78,8 @@ class PromptOptimizer:
         self.max_labeled_demos = max_labeled_demos
         self.reflection_lm = reflection_lm
         self.gepa_auto = gepa_auto
+        self.checkpoint_dir = Path(checkpoint_dir) if checkpoint_dir else None
+        self.resume_from = Path(resume_from) if resume_from else None
 
     def optimize_router(
         self,
@@ -109,7 +116,9 @@ class PromptOptimizer:
         metric = self.metric or routing_accuracy
         teacher = teacher_lm or get_orchestrator_lm()
 
-        return self._optimize(module, trainset, metric, teacher, devset=devset)
+        return self._optimize(
+            module, trainset, metric, teacher, devset=devset, module_name="router"
+        )
 
     def optimize_orchestrator(
         self,
@@ -151,7 +160,9 @@ class PromptOptimizer:
         metric = self.metric or orchestration_quality
         teacher = teacher_lm or get_orchestrator_lm()
 
-        return self._optimize(module, trainset, metric, teacher, devset=devset)
+        return self._optimize(
+            module, trainset, metric, teacher, devset=devset, module_name="orchestrator"
+        )
 
     def _optimize(
         self,
@@ -160,6 +171,7 @@ class PromptOptimizer:
         metric: Callable,
         teacher_lm: dspy.LM,
         devset: Optional[list[dspy.Example]] = None,
+        module_name: str = "module",
     ) -> dspy.Module:
         """
         Run optimization with selected strategy.
@@ -170,6 +182,7 @@ class PromptOptimizer:
             metric: Metric function
             teacher_lm: Teacher LM
             devset: Validation examples (used by GEPA/MIPROv2)
+            module_name: Name of the module (used for checkpoint directory)
 
         Returns:
             Optimized module
@@ -179,44 +192,85 @@ class PromptOptimizer:
             f"trainset_size={len(trainset)}, devset_size={len(devset) if devset else 0}"
         )
 
-        with dspy.context(lm=teacher_lm):
-            if self.strategy == "bootstrap":
-                optimizer = BootstrapFewShot(
-                    metric=metric,
-                    max_bootstrapped_demos=self.max_bootstrapped_demos,
-                )
-                optimized = optimizer.compile(module, trainset=trainset)
+        # Resume from checkpoint if specified
+        if self.resume_from:
+            logger.info(f"Resuming from checkpoint: {self.resume_from}")
+            module = CheckpointManager.load_checkpoint(module, self.resume_from)
 
-            elif self.strategy == "mipro":
-                optimizer = MIPROv2(
-                    metric=metric,
-                    num_candidates=5,
-                    init_temperature=0.7,
-                )
-                optimized = optimizer.compile(
-                    module,
-                    trainset=trainset,
-                    max_labeled_demos=self.max_labeled_demos,
-                )
+        # Set up checkpoint manager if checkpoint_dir is specified
+        checkpoint_manager: Optional[CheckpointManager] = None
+        if self.checkpoint_dir:
+            checkpoint_manager = CheckpointManager(
+                checkpoint_dir=self.checkpoint_dir,
+                module_name=module_name,
+                strategy=self.strategy,
+            )
 
-            elif self.strategy == "gepa":
-                # GEPA requires a reflection LM (can be same as teacher)
-                reflection_lm = self.reflection_lm or teacher_lm
-                # Wrap metric to match GEPA's GEPAFeedbackMetric protocol
-                gepa_metric = _wrap_metric_for_gepa(metric)
-                optimizer = GEPA(
-                    metric=gepa_metric,
-                    reflection_lm=reflection_lm,
-                    auto=self.gepa_auto,
-                )
-                # GEPA benefits from a devset for validation
-                compile_kwargs = {"trainset": trainset}
-                if devset:
-                    compile_kwargs["valset"] = devset
-                optimized = optimizer.compile(module, **compile_kwargs)
+        try:
+            with dspy.context(lm=teacher_lm):
+                if self.strategy == "bootstrap":
+                    # Wrap metric for checkpointing
+                    wrapped_metric = metric
+                    if checkpoint_manager:
+                        wrapped_metric = checkpoint_manager.create_metric_wrapper(
+                            metric, module
+                        )
 
-            else:
-                raise ValueError(f"Unknown optimization strategy: {self.strategy}")
+                    optimizer = BootstrapFewShot(
+                        metric=wrapped_metric,
+                        max_bootstrapped_demos=self.max_bootstrapped_demos,
+                    )
+                    optimized = optimizer.compile(module, trainset=trainset)
+
+                elif self.strategy == "mipro":
+                    # Wrap metric for checkpointing
+                    wrapped_metric = metric
+                    if checkpoint_manager:
+                        wrapped_metric = checkpoint_manager.create_metric_wrapper(
+                            metric, module
+                        )
+
+                    optimizer = MIPROv2(
+                        metric=wrapped_metric,
+                        num_candidates=5,
+                        init_temperature=0.7,
+                    )
+                    optimized = optimizer.compile(
+                        module,
+                        trainset=trainset,
+                        max_labeled_demos=self.max_labeled_demos,
+                    )
+
+                elif self.strategy == "gepa":
+                    # GEPA requires a reflection LM (can be same as teacher)
+                    reflection_lm = self.reflection_lm or teacher_lm
+                    # Wrap metric to match GEPA's GEPAFeedbackMetric protocol
+                    gepa_metric = _wrap_metric_for_gepa(metric)
+
+                    # Wrap GEPA metric for checkpointing
+                    if checkpoint_manager:
+                        gepa_metric = checkpoint_manager.create_gepa_metric_wrapper(
+                            gepa_metric, module
+                        )
+
+                    optimizer = GEPA(
+                        metric=gepa_metric,
+                        reflection_lm=reflection_lm,
+                        auto=self.gepa_auto,
+                    )
+                    # GEPA benefits from a devset for validation
+                    compile_kwargs = {"trainset": trainset}
+                    if devset:
+                        compile_kwargs["valset"] = devset
+                    optimized = optimizer.compile(module, **compile_kwargs)
+
+                else:
+                    raise ValueError(f"Unknown optimization strategy: {self.strategy}")
+
+        finally:
+            # Finalize checkpointing even if optimization fails
+            if checkpoint_manager:
+                checkpoint_manager.finalize()
 
         logger.info("Optimization complete")
         return optimized

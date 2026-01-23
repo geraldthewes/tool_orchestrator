@@ -13,6 +13,7 @@ from .datasets import (
     get_train_dev_split,
 )
 from .optimizer import PromptOptimizer, optimize_all_modules
+from .checkpoint import CheckpointManager
 
 __all__ = [
     "routing_accuracy",
@@ -24,4 +25,5 @@ __all__ = [
     "get_train_dev_split",
     "PromptOptimizer",
     "optimize_all_modules",
+    "CheckpointManager",
 ]
