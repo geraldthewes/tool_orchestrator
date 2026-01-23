@@ -18,6 +18,7 @@ from ...tools.registry import ToolRegistry
 from ...config_loader import load_delegates_config
 from ...models import DelegatesConfiguration
 from ...tracing import TracingContext
+from ...config import config
 
 logger = logging.getLogger(__name__)
 
@@ -300,7 +301,10 @@ class ToolOrchestratorModule(dspy.Module):
             return answer
 
         except Exception as e:
-            logger.error(f"Orchestration failed: {e}")
+            logger.error(
+                f"Orchestration failed: {e} "
+                f"(endpoint={config.orchestrator.base_url}, model={config.orchestrator.model})"
+            )
             return f"Error during orchestration: {e}"
 
     def run(self, query: str) -> str:
