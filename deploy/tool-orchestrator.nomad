@@ -45,6 +45,9 @@ EOH
       }
 
       env {
+        # Consul for config fetch
+        CONSUL_HTTP_ADDR = "http://consul.service.consul:8500"
+
         # Server configuration (port 8000 mapped via Nomad network)
         SERVER_HOST = "0.0.0.0"
 
