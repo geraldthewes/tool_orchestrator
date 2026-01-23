@@ -47,9 +47,9 @@ def search(
 
     try:
         response = requests.get(
-            config.tools.searxng_endpoint,
+            config.tools.searxng.url,
             params=params,
-            timeout=30,
+            timeout=config.tools.searxng.timeout,
         )
         response.raise_for_status()
         data = response.json()

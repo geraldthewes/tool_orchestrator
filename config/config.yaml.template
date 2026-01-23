@@ -36,7 +36,9 @@ server:
 
 tools:
   # SearXNG Web Search (local instance or any SearXNG endpoint)
-  searxng_endpoint: "http://localhost:8080/search"
+  searxng:
+    url: "${SEARXNG_URL:-http://localhost:8080/search}"
+    timeout: 30
 
   # Remote Python Executor (sandboxed code execution service)
   python_executor:

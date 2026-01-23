@@ -23,6 +23,7 @@ from .models import (
     OrchestratorConfig,
     ServerConfig,
     PythonExecutorConfig,
+    SearxngConfig,
     ToolsConfig,
     FastPathConfig,
     LoggingConfig,
@@ -247,12 +248,21 @@ def _parse_python_executor_config(data: dict) -> PythonExecutorConfig:
     )
 
 
+def _parse_searxng_config(data: dict) -> SearxngConfig:
+    """Parse SearXNG configuration from dict."""
+    return SearxngConfig(
+        url=data.get("url", "http://searxng.cluster:9999/search"),
+        timeout=int(data.get("timeout", 30)),
+    )
+
+
 def _parse_tools_config(data: dict) -> ToolsConfig:
     """Parse tools configuration from dict."""
     python_executor_data = data.get("python_executor", {})
+    searxng_data = data.get("searxng", {})
 
     return ToolsConfig(
-        searxng_endpoint=data.get("searxng_endpoint", "http://localhost:8080/search"),
+        searxng=_parse_searxng_config(searxng_data),
         python_executor=_parse_python_executor_config(python_executor_data),
     )
 

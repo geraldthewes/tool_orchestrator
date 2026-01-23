@@ -72,7 +72,7 @@ async def lifespan(app: FastAPI):
     # Log tool endpoints
     logger.info("-" * 60)
     logger.info("TOOL ENDPOINTS")
-    logger.info(f"  SearXNG: {config.tools.searxng_endpoint}")
+    logger.info(f"  SearXNG: {config.tools.searxng.url}")
     logger.info(f"  Python Executor: {config.tools.python_executor_url}")
 
     # Log registered tools

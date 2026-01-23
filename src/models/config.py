@@ -5,7 +5,6 @@ Defines dataclasses for the unified YAML configuration file.
 """
 
 from dataclasses import dataclass, field
-from typing import Optional
 
 from .delegate import DelegateConfig
 
@@ -36,12 +35,24 @@ class PythonExecutorConfig:
 
 
 @dataclass
+class SearxngConfig:
+    """Configuration for the SearXNG search tool."""
+    url: str = "http://searxng.cluster:9999/search"
+    timeout: int = 30
+
+
+@dataclass
 class ToolsConfig:
     """Configuration for tool endpoints."""
-    searxng_endpoint: str = "http://localhost:8080/search"
+    searxng: SearxngConfig = field(default_factory=SearxngConfig)
     python_executor: PythonExecutorConfig = field(default_factory=PythonExecutorConfig)
 
     # Backward compatibility properties
+    @property
+    def searxng_endpoint(self) -> str:
+        """Backward compatibility alias for searxng.url."""
+        return self.searxng.url
+
     @property
     def python_executor_url(self) -> str:
         """Backward compatibility alias for python_executor.url."""
