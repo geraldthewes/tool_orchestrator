@@ -7,6 +7,7 @@ with adapters for existing ToolOrchestra tools.
 
 import logging
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Optional, Callable, Any
 
 import dspy
@@ -14,6 +15,7 @@ import dspy
 from ..signatures import ToolOrchestrationTask
 from ..adapters import get_orchestrator_lm
 from ..adapters.lm_factory import TracedLM
+from ..optimization.checkpoint import CheckpointManager
 from ...tools.registry import ToolRegistry
 from ...config import config
 from ...config_loader import get_delegates_from_app_config
@@ -236,6 +238,9 @@ class ToolOrchestratorModule(dspy.Module):
             max_iters=max_steps,
         )
 
+        # Load optimized checkpoint if configured
+        self._load_optimized_checkpoint()
+
     def _build_dspy_tools(self) -> list[Callable]:
         """Build list of DSPy-compatible tool functions."""
         tools = []
@@ -266,6 +271,25 @@ class ToolOrchestratorModule(dspy.Module):
             logger.debug(f"Registered DSPy delegate tool: {delegate.tool_name}")
 
         return tools
+
+    def _load_optimized_checkpoint(self) -> None:
+        """Load the best checkpoint if optimized_prompts_path is configured."""
+        checkpoint_base = config.dspy.optimized_prompts_path
+        if not checkpoint_base:
+            logger.debug("No optimized_prompts_path configured, using default prompts")
+            return
+
+        checkpoint_dir = Path(checkpoint_base) / "orchestrator"
+        if not checkpoint_dir.exists():
+            logger.warning(f"Checkpoint directory not found: {checkpoint_dir}")
+            return
+
+        best_checkpoint = CheckpointManager.get_best_checkpoint(checkpoint_dir)
+        if best_checkpoint:
+            self.load(str(best_checkpoint))
+            logger.info(f"Loaded optimized checkpoint: {best_checkpoint}")
+        else:
+            logger.debug(f"No best checkpoint found in {checkpoint_dir}")
 
     def forward(self, question: str) -> dspy.Prediction:
         """

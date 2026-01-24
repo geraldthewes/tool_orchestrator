@@ -609,6 +609,24 @@ python scripts/optimize_prompts.py --no-checkpoint
 | `--dry-run` | - | Show what would be done without running |
 | `-v` | - | Enable verbose logging |
 
+**Deploying Optimized Checkpoints:**
+
+After running optimization, deploy the best checkpoint:
+
+```bash
+# Copy best checkpoint to deploy directory
+mkdir -p deploy/checkpoints/orchestrator
+cp data/checkpoints/orchestrator/checkpoint_005.json deploy/checkpoints/orchestrator/
+cp data/checkpoints/orchestrator/manifest.json deploy/checkpoints/orchestrator/
+
+# Set config to load checkpoints at runtime
+# In config/config.yaml:
+#   dspy:
+#     optimized_prompts_path: "deploy/checkpoints"
+```
+
+The service automatically loads the best checkpoint from the configured path at startup. Training checkpoints (`data/checkpoints/`) are gitignored, while deployment checkpoints (`deploy/checkpoints/`) are committed.
+
 **Programmatic Usage:**
 
 ```python

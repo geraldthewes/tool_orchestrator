@@ -127,6 +127,33 @@ The config file supports environment variable interpolation with `${VAR:-default
 
 **Note:** `config/config.yaml` is gitignored as it may contain secrets.
 
+## DSPy Checkpoint Deployment
+
+After running DSPy optimization (`python scripts/optimize_prompts.py`), deploy the best checkpoint:
+
+```bash
+# Copy best checkpoint to deploy directory
+mkdir -p deploy/checkpoints/orchestrator
+cp data/checkpoints/orchestrator/checkpoint_*.json deploy/checkpoints/orchestrator/  # copy best
+cp data/checkpoints/orchestrator/manifest.json deploy/checkpoints/orchestrator/
+```
+
+The service loads the best checkpoint at startup when `dspy.optimized_prompts_path` is configured:
+
+```yaml
+# In config/config.yaml
+dspy:
+  optimized_prompts_path: "deploy/checkpoints"
+```
+
+**Directory structure:**
+- `data/checkpoints/` - Training artifacts (gitignored)
+- `deploy/checkpoints/` - Deployment artifacts (committed)
+
+**Key files:**
+- `src/prompts/modules/orchestrator.py` - `_load_optimized_checkpoint()` loads at init
+- `src/prompts/optimization/checkpoint.py` - `CheckpointManager` handles checkpoint I/O
+
 ## Testing
 
 Tests use mocked LLM responses to test orchestration logic without external services. Tool tests (math solver, Python executor) run locally without mocks.

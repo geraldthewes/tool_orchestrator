@@ -4,6 +4,7 @@ Tests for DSPy Modules.
 Tests module behavior with mocked LMs.
 """
 
+import json
 from unittest.mock import Mock, patch, MagicMock
 
 import dspy
@@ -317,3 +318,63 @@ class TestMetrics:
         score = orchestration_quality(example, prediction)
         # Only 1 out of 3 keywords matched
         assert 0.3 <= score <= 0.4
+
+
+class TestCheckpointLoading:
+    """Tests for optimized checkpoint loading."""
+
+    def test_loads_checkpoint_when_configured(self, tmp_path):
+        """Test that checkpoint is loaded when path is configured."""
+        # Setup checkpoint directory with manifest
+        checkpoint_dir = tmp_path / "orchestrator"
+        checkpoint_dir.mkdir(parents=True)
+
+        manifest = {
+            "best": {"id": 1, "score": 1.0, "path": "checkpoint_001.json"}
+        }
+        (checkpoint_dir / "manifest.json").write_text(json.dumps(manifest))
+        (checkpoint_dir / "checkpoint_001.json").write_text("{}")
+
+        # Mock config to return our temp path
+        with patch("src.prompts.modules.orchestrator.config") as mock_config:
+            mock_config.dspy.optimized_prompts_path = str(tmp_path)
+            mock_config.delegates = {}
+
+            # Mock the load method
+            with patch.object(ToolOrchestratorModule, "load") as mock_load:
+                _module = ToolOrchestratorModule()
+                mock_load.assert_called_once()
+
+    def test_no_load_when_path_not_configured(self):
+        """Test that no checkpoint is loaded when path is empty."""
+        with patch("src.prompts.modules.orchestrator.config") as mock_config:
+            mock_config.dspy.optimized_prompts_path = ""
+            mock_config.delegates = {}
+
+            with patch.object(ToolOrchestratorModule, "load") as mock_load:
+                _module = ToolOrchestratorModule()
+                mock_load.assert_not_called()
+
+    def test_no_load_when_directory_missing(self, tmp_path):
+        """Test that no checkpoint is loaded when directory doesn't exist."""
+        with patch("src.prompts.modules.orchestrator.config") as mock_config:
+            mock_config.dspy.optimized_prompts_path = str(tmp_path / "nonexistent")
+            mock_config.delegates = {}
+
+            with patch.object(ToolOrchestratorModule, "load") as mock_load:
+                _module = ToolOrchestratorModule()
+                mock_load.assert_not_called()
+
+    def test_no_load_when_manifest_missing(self, tmp_path):
+        """Test that no checkpoint is loaded when manifest is missing."""
+        # Create directory but no manifest
+        checkpoint_dir = tmp_path / "orchestrator"
+        checkpoint_dir.mkdir(parents=True)
+
+        with patch("src.prompts.modules.orchestrator.config") as mock_config:
+            mock_config.dspy.optimized_prompts_path = str(tmp_path)
+            mock_config.delegates = {}
+
+            with patch.object(ToolOrchestratorModule, "load") as mock_load:
+                _module = ToolOrchestratorModule()
+                mock_load.assert_not_called()

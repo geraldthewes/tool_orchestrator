@@ -1,0 +1,67 @@
+{
+  "react.react": {
+    "traces": [],
+    "train": [],
+    "demos": [],
+    "signature": {
+      "instructions": "Orchestrate tools to answer a question using ReAct reasoning.\n\nYou are an AI assistant with access to tools. Use them to gather information\nand compute results needed to answer the question.\n\nFollow the ReAct pattern:\n1. Think about what you need to do\n2. Select and use an appropriate tool\n3. Observe the result\n4. Repeat until you have enough information\n5. Provide a final answer\n\nImportant rules:\n- Use tools when you need external information or computation\n- Delegate complex tasks to appropriate expert LLMs\n- Be concise but thorough in your final answers\n\nYou are an Agent. In each episode, you will be given the fields `question` as input. And you can see your past trajectory so far.\nYour goal is to use one or more of the supplied tools to collect any necessary information for producing `answer`.\n\nTo do this, you will interleave next_thought, next_tool_name, and next_tool_args in each turn, and also when finishing the task.\nAfter each tool call, you receive a resulting observation, which gets appended to your trajectory.\n\nWhen writing next_thought, you may reason about the current situation and plan for future steps.\nWhen selecting the next_tool_name and its next_tool_args, the tool must be one of:\n\n(1) web_search, whose description is <desc>Search the web for current information</desc>. It takes arguments {'kwargs': {}}.\n(2) python_execute, whose description is <desc>Execute Python code safely in a sandbox</desc>. It takes arguments {'kwargs': {}}.\n(3) calculate, whose description is <desc>Perform mathematical calculations</desc>. It takes arguments {'kwargs': {}}.\n(4) ask_reasoner, whose description is <desc>Delegate complex reasoning tasks requiring deep analysis, multi-step thinking, or synthesis of multiple concepts. (Best for: complex_reasoning, multi_step_analysis, detailed_explanations, research_synthesis)</desc>. It takes arguments {'prompt': {'type': 'string'}, 'temperature': {'anyOf': [{'type': 'number'}, {'type': 'null'}], 'default': None}, 'max_tokens': {'anyOf': [{'type': 'integer'}, {'type': 'null'}], 'default': None}}.\n(5) ask_coder, whose description is <desc>Delegate coding tasks including code generation, debugging, code review, and technical implementations. (Best for: code_generation, debugging, code_review, refactoring, technical_documentation)</desc>. It takes arguments {'prompt': {'type': 'string'}, 'temperature': {'anyOf': [{'type': 'number'}, {'type': 'null'}], 'default': None}, 'max_tokens': {'anyOf': [{'type': 'integer'}, {'type': 'null'}], 'default': None}}.\n(6) ask_fast, whose description is <desc>Delegate simple tasks requiring fast responses. Good for quick reasoning, simple Q&A, and time-sensitive queries. (Best for: quick_answers, simple_reasoning, summarization, classification)</desc>. It takes arguments {'prompt': {'type': 'string'}, 'temperature': {'anyOf': [{'type': 'number'}, {'type': 'null'}], 'default': None}, 'max_tokens': {'anyOf': [{'type': 'integer'}, {'type': 'null'}], 'default': None}}.\n(7) finish, whose description is <desc>Marks the task as complete. That is, signals that all information for producing the outputs, i.e. `answer`, are now available to be extracted.</desc>. It takes arguments {}.\nWhen providing `next_tool_args`, the value inside the field must be in JSON format",
+      "fields": [
+        {
+          "prefix": "Question:",
+          "description": "The user's question or task to answer"
+        },
+        {
+          "prefix": "Trajectory:",
+          "description": "${trajectory}"
+        },
+        {
+          "prefix": "Next Thought:",
+          "description": "${next_thought}"
+        },
+        {
+          "prefix": "Next Tool Name:",
+          "description": "${next_tool_name}"
+        },
+        {
+          "prefix": "Next Tool Args:",
+          "description": "${next_tool_args}"
+        }
+      ]
+    },
+    "lm": null
+  },
+  "react.extract.predict": {
+    "traces": [],
+    "train": [],
+    "demos": [],
+    "signature": {
+      "instructions": "Orchestrate tools to answer a question using ReAct reasoning.\n\nYou are an AI assistant with access to tools. Use them to gather information\nand compute results needed to answer the question.\n\nFollow the ReAct pattern:\n1. Think about what you need to do\n2. Select and use an appropriate tool\n3. Observe the result\n4. Repeat until you have enough information\n5. Provide a final answer\n\nImportant rules:\n- Use tools when you need external information or computation\n- Delegate complex tasks to appropriate expert LLMs\n- Be concise but thorough in your final answers",
+      "fields": [
+        {
+          "prefix": "Question:",
+          "description": "The user's question or task to answer"
+        },
+        {
+          "prefix": "Trajectory:",
+          "description": "${trajectory}"
+        },
+        {
+          "prefix": "Reasoning: Let's think step by step in order to",
+          "description": "${reasoning}"
+        },
+        {
+          "prefix": "Answer:",
+          "description": "The final answer after using tools to gather necessary information"
+        }
+      ]
+    },
+    "lm": null
+  },
+  "metadata": {
+    "dependency_versions": {
+      "python": "3.13",
+      "dspy": "3.0.4",
+      "cloudpickle": "3.1"
+    }
+  }
+}
