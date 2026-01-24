@@ -253,6 +253,20 @@ def main():
     else:
         logger.info("Checkpointing disabled")
 
+    # Clear old checkpoints when starting fresh (not resuming)
+    if checkpoint_dir and not args.resume:
+        for module_name in ["orchestrator", "router"]:
+            if args.module in ("all", module_name):
+                module_checkpoint_dir = checkpoint_dir / module_name
+                if module_checkpoint_dir.exists():
+                    old_files = list(module_checkpoint_dir.glob("*.json"))
+                    if old_files:
+                        for old_file in old_files:
+                            old_file.unlink()
+                        logger.info(
+                            f"Cleared {len(old_files)} old checkpoint(s) from {module_checkpoint_dir}"
+                        )
+
     optimizer = PromptOptimizer(
         strategy=args.strategy,
         gepa_auto=args.gepa_auto,
