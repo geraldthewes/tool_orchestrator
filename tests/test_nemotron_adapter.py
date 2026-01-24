@@ -369,15 +369,15 @@ class TestLoggingContext:
         self, caplog: pytest.LogCaptureFixture
     ) -> None:
         """Test that standard parsing failure logs include exception type."""
-        caplog.set_level(logging.WARNING)
+        caplog.set_level(logging.INFO)
 
         # Malformed JSON that would cause JSONAdapter to throw
         completion = '{"partial": true'  # Missing closing brace
         self.adapter.parse(self.signature, completion)
 
-        # Check if any warning about standard parsing failure was logged
-        warning_messages = [
-            r.message for r in caplog.records if r.levelno == logging.WARNING
+        # Check if info message about standard parsing failure was logged
+        info_messages = [
+            r.message for r in caplog.records if r.levelno == logging.INFO
         ]
-        # At minimum we should get the final "Failed to parse" warning
-        assert any("Failed to parse" in msg for msg in warning_messages)
+        assert any("Standard JSONAdapter parsing failed" in msg for msg in info_messages)
+        assert any("trying fallback" in msg for msg in info_messages)

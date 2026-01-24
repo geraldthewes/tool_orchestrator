@@ -66,8 +66,8 @@ class NemotronJSONAdapter(JSONAdapter):
                 logger.debug(f"Standard parsing succeeded: {list(fields.keys())}")
                 return fields
         except Exception as e:
-            logger.warning(
-                f"Standard JSONAdapter parsing failed: {type(e).__name__}: {e}"
+            logger.info(
+                f"Standard JSONAdapter parsing failed, trying fallback: {type(e).__name__}: {e}"
             )
 
         # If standard parsing returned empty or failed, check for "final" wrapper
