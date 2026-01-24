@@ -58,6 +58,8 @@ class CheckpointManager:
         self._eval_scores: list[float] = []  # Track scores in current evaluation
         self._valset_size: int = valset_size  # Size of validation set
         self._perfect_score_reached: bool = False  # Flag for early stopping
+        self._processed_count: int = 0  # Counter for processed samples
+        self._last_logged_progress: int = 0  # Track last reported progress
 
         # Create checkpoint directory
         self.checkpoint_dir.mkdir(parents=True, exist_ok=True)
@@ -71,6 +73,17 @@ class CheckpointManager:
             module: The DSPy module being optimized
         """
         self._module_ref = module
+
+    def _log_progress(self) -> None:
+        """Log progress at ~10% intervals to avoid spam."""
+        if self._valset_size <= 0:
+            return
+
+        # Log every ~10% or at least every 20 samples
+        interval = max(self._valset_size // 10, 20)
+        if (self._processed_count - self._last_logged_progress) >= interval:
+            logger.info(f"Progress: {self._processed_count}/{self._valset_size} samples")
+            self._last_logged_progress = self._processed_count
 
     def create_metric_wrapper(
         self, base_metric: Callable, module_ref: dspy.Module
@@ -93,7 +106,9 @@ class CheckpointManager:
 
         def wrapped_metric(example, prediction, trace=None):
             score = base_metric(example, prediction, trace)
+            self._processed_count += 1
             self._eval_scores.append(score)
+            self._log_progress()
 
             # If we know valset size, checkpoint after each complete evaluation
             if self._valset_size > 0 and len(self._eval_scores) >= self._valset_size:
@@ -126,7 +141,9 @@ class CheckpointManager:
 
         def wrapped_metric(gold, pred, trace=None, pred_name=None, pred_trace=None):
             score = base_metric(gold, pred, trace, pred_name, pred_trace)
+            self._processed_count += 1
             self._eval_scores.append(score)
+            self._log_progress()
 
             # If we know valset size, checkpoint after each complete evaluation
             if self._valset_size > 0 and len(self._eval_scores) >= self._valset_size:
@@ -153,6 +170,8 @@ class CheckpointManager:
         avg_score = sum(self._eval_scores) / len(self._eval_scores)
         num_examples = len(self._eval_scores)
         self._eval_scores = []  # Reset for next evaluation
+        self._processed_count = 0  # Reset progress counter
+        self._last_logged_progress = 0  # Reset progress logging tracker
 
         logger.info(
             f"Evaluation complete: avg_score={avg_score:.4f} "
