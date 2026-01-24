@@ -13,7 +13,7 @@ import dspy
 from dspy.teleprompt import BootstrapFewShot, MIPROv2, GEPA
 
 from .checkpoint import CheckpointManager
-from .metrics import routing_accuracy, orchestration_quality
+from .metrics import routing_accuracy, orchestration_quality_with_tools
 from .datasets import (
     load_routing_dataset,
     load_orchestration_dataset,
@@ -174,7 +174,7 @@ class PromptOptimizer:
             logger.warning("No training data for orchestrator optimization")
             return module
 
-        metric = self.metric or orchestration_quality
+        metric = self.metric or orchestration_quality_with_tools
         teacher = teacher_lm or get_teacher_lm(
             base_url=self.teacher_base_url,
             model=self.teacher_model,
@@ -225,6 +225,7 @@ class PromptOptimizer:
                 checkpoint_dir=self.checkpoint_dir,
                 module_name=module_name,
                 strategy=self.strategy,
+                valset_size=len(devset) if devset else len(trainset),
             )
 
         try:
@@ -284,6 +285,14 @@ class PromptOptimizer:
                     if devset:
                         compile_kwargs["valset"] = devset
                     optimized = optimizer.compile(module, **compile_kwargs)
+
+                    # Check if early stopping was triggered
+                    if checkpoint_manager and checkpoint_manager.should_stop_early():
+                        logger.info(
+                            "Perfect score (1.0) was achieved during optimization. "
+                            "GEPA does not support early stopping callbacks, but "
+                            "the best checkpoint has been saved."
+                        )
 
                 else:
                     raise ValueError(f"Unknown optimization strategy: {self.strategy}")

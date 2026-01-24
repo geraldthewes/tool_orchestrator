@@ -74,7 +74,8 @@ class TestMetricWrapper:
 
     def test_wrapped_metric_checkpoints_on_improvement(self, tmp_path):
         """Test that checkpoint is saved when score improves."""
-        manager = CheckpointManager(tmp_path, "test")
+        # Set valset_size=1 to trigger checkpoint after each evaluation
+        manager = CheckpointManager(tmp_path, "test", valset_size=1)
         module = MagicMock(spec=dspy.Module)
 
         def base_metric(e, p, t=None):
@@ -89,7 +90,8 @@ class TestMetricWrapper:
 
     def test_no_checkpoint_when_score_not_improved(self, tmp_path):
         """Test that no checkpoint is saved when score doesn't improve."""
-        manager = CheckpointManager(tmp_path, "test")
+        # Set valset_size=1 to trigger checkpoint after each evaluation
+        manager = CheckpointManager(tmp_path, "test", valset_size=1)
         module = MagicMock(spec=dspy.Module)
 
         # First call improves
@@ -110,7 +112,8 @@ class TestMetricWrapper:
 
     def test_creates_gepa_metric_wrapper(self, tmp_path):
         """Test creating a GEPA-compatible wrapped metric."""
-        manager = CheckpointManager(tmp_path, "test")
+        # Set valset_size=1 to trigger checkpoint after each evaluation
+        manager = CheckpointManager(tmp_path, "test", valset_size=1)
         module = MagicMock(spec=dspy.Module)
 
         # GEPA metrics have different signature
@@ -316,13 +319,134 @@ class TestCheckpointLoading:
         assert result is None
 
 
+class TestBatchCheckpointing:
+    """Tests for batch-based checkpoint behavior."""
+
+    def test_accumulates_scores_before_checkpoint(self, tmp_path):
+        """Test that scores are accumulated until valset_size is reached."""
+        manager = CheckpointManager(tmp_path, "test", valset_size=3)
+        module = MagicMock(spec=dspy.Module)
+
+        def base_metric(e, p, t=None):
+            return 0.8
+
+        wrapped = manager.create_metric_wrapper(base_metric, module)
+
+        # First two calls should not trigger checkpoint
+        wrapped(MagicMock(), MagicMock())
+        wrapped(MagicMock(), MagicMock())
+
+        assert manager.checkpoint_count == 0
+        assert len(manager._eval_scores) == 2
+
+        # Third call should trigger checkpoint
+        wrapped(MagicMock(), MagicMock())
+
+        assert manager.checkpoint_count == 1
+        assert len(manager._eval_scores) == 0  # Reset after checkpoint
+
+    def test_average_score_used_for_checkpoint(self, tmp_path):
+        """Test that average score is used for checkpointing."""
+        manager = CheckpointManager(tmp_path, "test", valset_size=3)
+        module = MagicMock(spec=dspy.Module)
+
+        scores = iter([0.6, 0.8, 1.0])
+
+        def variable_metric(e, p, t=None):
+            return next(scores)
+
+        wrapped = manager.create_metric_wrapper(variable_metric, module)
+
+        # Trigger checkpoint after 3 calls
+        wrapped(MagicMock(), MagicMock())  # 0.6
+        wrapped(MagicMock(), MagicMock())  # 0.8
+        wrapped(MagicMock(), MagicMock())  # 1.0
+
+        # Average: (0.6 + 0.8 + 1.0) / 3 = 0.8
+        assert manager.best_score == pytest.approx(0.8)
+
+    def test_evaluate_and_checkpoint_manual(self, tmp_path):
+        """Test manually calling evaluate_and_checkpoint."""
+        manager = CheckpointManager(tmp_path, "test")
+        module = MagicMock(spec=dspy.Module)
+        manager._module_ref = module
+
+        # Accumulate scores manually
+        manager._eval_scores = [0.7, 0.8, 0.9]
+
+        avg_score = manager.evaluate_and_checkpoint()
+
+        assert avg_score == pytest.approx(0.8)
+        assert manager.best_score == pytest.approx(0.8)
+        assert len(manager._eval_scores) == 0
+
+    def test_no_checkpoint_when_average_not_improved(self, tmp_path):
+        """Test no checkpoint when average doesn't improve."""
+        manager = CheckpointManager(tmp_path, "test", valset_size=2)
+        module = MagicMock(spec=dspy.Module)
+        manager._module_ref = module
+        manager.best_score = 0.9  # Set high initial score
+
+        def metric(e, p, t=None):
+            return 0.7
+
+        wrapped = manager.create_metric_wrapper(metric, module)
+
+        wrapped(MagicMock(), MagicMock())
+        wrapped(MagicMock(), MagicMock())
+
+        # Average 0.7 < best_score 0.9, no checkpoint
+        assert manager.checkpoint_count == 0
+        assert manager.best_score == 0.9
+
+    def test_perfect_score_sets_early_stop_flag(self, tmp_path):
+        """Test that perfect score sets early stopping flag."""
+        manager = CheckpointManager(tmp_path, "test", valset_size=2)
+        module = MagicMock(spec=dspy.Module)
+
+        def perfect_metric(e, p, t=None):
+            return 1.0
+
+        wrapped = manager.create_metric_wrapper(perfect_metric, module)
+
+        wrapped(MagicMock(), MagicMock())
+        wrapped(MagicMock(), MagicMock())
+
+        assert manager.should_stop_early() is True
+        assert manager._perfect_score_reached is True
+
+    def test_should_stop_early_false_initially(self, tmp_path):
+        """Test that should_stop_early is False initially."""
+        manager = CheckpointManager(tmp_path, "test")
+
+        assert manager.should_stop_early() is False
+
+    def test_finalize_processes_remaining_scores(self, tmp_path):
+        """Test that finalize processes any remaining accumulated scores."""
+        manager = CheckpointManager(tmp_path, "test")
+        module = MagicMock(spec=dspy.Module)
+        manager._module_ref = module
+
+        # Accumulate scores without triggering checkpoint
+        manager._eval_scores = [0.75, 0.85]
+
+        manager.finalize()
+
+        # Should have processed remaining scores
+        assert manager.best_score == 0.8  # Average of 0.75, 0.85
+        assert manager.checkpoint_count == 1
+
+
 class TestCheckpointIntegration:
     """Integration tests for checkpoint workflow."""
 
     def test_full_checkpoint_workflow(self, tmp_path):
         """Test complete checkpoint save and resume workflow."""
         # Phase 1: Run optimization with checkpointing
-        manager1 = CheckpointManager(tmp_path, "orchestrator", strategy="gepa")
+        # Set valset_size=1 to trigger checkpoint after each evaluation
+        manager1 = CheckpointManager(
+            tmp_path, "orchestrator", strategy="gepa", valset_size=1
+        )
         checkpoint_dir = tmp_path / "orchestrator"
 
         # Create a mock module that writes to actual files when save is called

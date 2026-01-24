@@ -157,3 +157,76 @@ def orchestration_completeness(
         return 0.6
     else:
         return 1.0
+
+
+def tool_selection_accuracy(
+    example: dspy.Example, prediction: Any, trace=None
+) -> float:
+    """
+    Evaluate whether the predicted tools match expected tools.
+
+    Handles both single tool ("tool" field) and multi-tool ("tools" field) examples.
+    Returns 1.0 for exact match, partial credit for subset matches.
+
+    Args:
+        example: DSPy Example with expected tool(s)
+        prediction: Model prediction with tool(s)
+        trace: Optional trace information
+
+    Returns:
+        Score between 0.0 and 1.0
+    """
+    # Get expected tools from example (handle both "tool" and "tools" fields)
+    expected = example.get("tools") or example.get("tool")
+    if not expected:
+        return 1.0  # No tool expectation, pass through
+
+    # Normalize to list
+    if isinstance(expected, str):
+        expected = [expected]
+
+    # Get predicted tools from prediction
+    predicted = getattr(prediction, "tools", None) or getattr(prediction, "tool", None)
+    if not predicted:
+        return 0.0  # No tools predicted when tools expected
+
+    # Normalize to list
+    if isinstance(predicted, str):
+        predicted = [predicted]
+
+    # Calculate accuracy (order-independent set comparison)
+    expected_set = set(expected)
+    predicted_set = set(predicted)
+
+    if not expected_set:
+        return 1.0
+
+    # Intersection over union for partial credit
+    intersection = expected_set & predicted_set
+    union = expected_set | predicted_set
+
+    return len(intersection) / len(union) if union else 1.0
+
+
+def orchestration_quality_with_tools(
+    example: dspy.Example, prediction: Any, trace=None
+) -> float:
+    """
+    Combined metric: tool_accuracy * answer_quality.
+
+    Both must be good to achieve a high score. This prevents:
+    - Gaming with correct answer but wrong tools
+    - Gaming with correct tools but wrong answer
+
+    Args:
+        example: DSPy Example with expected answer and tool(s)
+        prediction: Model prediction with answer and tool(s)
+        trace: Optional trace information
+
+    Returns:
+        Score between 0.0 and 1.0
+    """
+    tool_score = tool_selection_accuracy(example, prediction, trace)
+    answer_score = orchestration_quality(example, prediction, trace)
+
+    return tool_score * answer_score

@@ -26,7 +26,13 @@ class CheckpointManager:
     to be resumed from the best known state if interrupted.
     """
 
-    def __init__(self, checkpoint_dir: Path, module_name: str, strategy: str = ""):
+    def __init__(
+        self,
+        checkpoint_dir: Path,
+        module_name: str,
+        strategy: str = "",
+        valset_size: int = 0,
+    ):
         """
         Initialize the checkpoint manager.
 
@@ -34,6 +40,7 @@ class CheckpointManager:
             checkpoint_dir: Directory to save checkpoints
             module_name: Name of the module being optimized (e.g., "orchestrator")
             strategy: Optimization strategy name for metadata
+            valset_size: Size of validation set (for batch-based checkpointing)
         """
         self.checkpoint_dir = Path(checkpoint_dir) / module_name
         self.module_name = module_name
@@ -48,6 +55,9 @@ class CheckpointManager:
             "best": None,
         }
         self._module_ref: Optional[dspy.Module] = None
+        self._eval_scores: list[float] = []  # Track scores in current evaluation
+        self._valset_size: int = valset_size  # Size of validation set
+        self._perfect_score_reached: bool = False  # Flag for early stopping
 
         # Create checkpoint directory
         self.checkpoint_dir.mkdir(parents=True, exist_ok=True)
@@ -66,7 +76,11 @@ class CheckpointManager:
         self, base_metric: Callable, module_ref: dspy.Module
     ) -> Callable:
         """
-        Wrap a metric function to save checkpoint on improvement.
+        Wrap a metric function to checkpoint based on average score.
+
+        Accumulates scores and checkpoints based on average across the full
+        validation set, preventing single high-scoring examples from gaming
+        the checkpoint system.
 
         Args:
             base_metric: The original metric function
@@ -79,11 +93,11 @@ class CheckpointManager:
 
         def wrapped_metric(example, prediction, trace=None):
             score = base_metric(example, prediction, trace)
+            self._eval_scores.append(score)
 
-            # Only checkpoint on score improvement
-            if score > self.best_score:
-                self.best_score = score
-                self._save_checkpoint(score)
+            # If we know valset size, checkpoint after each complete evaluation
+            if self._valset_size > 0 and len(self._eval_scores) >= self._valset_size:
+                self.evaluate_and_checkpoint()
 
             return score
 
@@ -93,9 +107,13 @@ class CheckpointManager:
         self, base_metric: Callable, module_ref: dspy.Module
     ) -> Callable:
         """
-        Wrap a GEPA-compatible metric function to save checkpoint on improvement.
+        Wrap a GEPA-compatible metric function to checkpoint based on average score.
 
         GEPA expects: metric(gold, pred, trace, pred_name, pred_trace) -> float
+
+        Accumulates scores and checkpoints based on average across the full
+        validation set, preventing single high-scoring examples from gaming
+        the checkpoint system.
 
         Args:
             base_metric: The original GEPA metric function
@@ -108,15 +126,58 @@ class CheckpointManager:
 
         def wrapped_metric(gold, pred, trace=None, pred_name=None, pred_trace=None):
             score = base_metric(gold, pred, trace, pred_name, pred_trace)
+            self._eval_scores.append(score)
 
-            # Only checkpoint on score improvement
-            if score > self.best_score:
-                self.best_score = score
-                self._save_checkpoint(score)
+            # If we know valset size, checkpoint after each complete evaluation
+            if self._valset_size > 0 and len(self._eval_scores) >= self._valset_size:
+                self.evaluate_and_checkpoint()
 
             return score
 
         return wrapped_metric
+
+    def evaluate_and_checkpoint(self) -> float:
+        """
+        Call after a full evaluation pass to checkpoint if improved.
+
+        Computes average score across accumulated evaluation scores,
+        resets the accumulator, and saves checkpoint if the average
+        exceeds the best score seen so far.
+
+        Returns:
+            Average score for this evaluation pass
+        """
+        if not self._eval_scores:
+            return 0.0
+
+        avg_score = sum(self._eval_scores) / len(self._eval_scores)
+        num_examples = len(self._eval_scores)
+        self._eval_scores = []  # Reset for next evaluation
+
+        logger.info(
+            f"Evaluation complete: avg_score={avg_score:.4f} "
+            f"(over {num_examples} examples), best_score={self.best_score:.4f}"
+        )
+
+        if avg_score > self.best_score:
+            self.best_score = avg_score
+            self._save_checkpoint(avg_score)
+
+        # Check for perfect score (early stopping signal)
+        if avg_score >= 1.0:
+            self._perfect_score_reached = True
+            logger.info("Perfect score achieved (1.0), signaling early stop")
+
+        return avg_score
+
+    def should_stop_early(self) -> bool:
+        """
+        Check if optimization should stop early.
+
+        Returns:
+            True if perfect score was reached
+        """
+        return self._perfect_score_reached
 
     def _save_checkpoint(self, score: float) -> Optional[Path]:
         """
@@ -178,8 +239,16 @@ class CheckpointManager:
         """
         Finalize checkpointing after optimization completes.
 
-        Saves final manifest with completion timestamp.
+        Processes any remaining accumulated scores and saves final manifest
+        with completion timestamp.
         """
+        # Process any remaining scores that weren't checkpointed
+        if self._eval_scores:
+            logger.info(
+                f"Processing {len(self._eval_scores)} remaining scores at finalization"
+            )
+            self.evaluate_and_checkpoint()
+
         self.manifest["completed_at"] = datetime.now(timezone.utc).isoformat()
         self.manifest["final_best_score"] = self.best_score
         self.save_manifest()
