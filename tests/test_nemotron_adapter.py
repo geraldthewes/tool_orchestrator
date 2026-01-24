@@ -4,6 +4,8 @@ Tests for NemotronJSONAdapter.
 Tests the custom adapter that handles Nemotron-Orchestrator's "final" wrapper format.
 """
 
+from typing import Any
+
 import dspy
 
 from src.prompts.adapters.nemotron_adapter import NemotronJSONAdapter
@@ -236,3 +238,72 @@ class TestExtractJson:
         result = self.adapter._extract_json(text)
 
         assert result == '{"outer": {"inner": "value"}}'
+
+
+class ReactSignature(dspy.Signature):
+    """Mock signature matching DSPy ReAct internal fields."""
+
+    trajectory: str = dspy.InputField()
+    next_thought: str = dspy.OutputField(desc="The next thought")
+    next_tool_name: str = dspy.OutputField(desc="The tool to call")
+    next_tool_args: dict[str, Any] = dspy.OutputField(desc="Arguments for the tool")
+
+
+class TestReActFieldsParsing:
+    """Tests for parsing ReAct module's internal signature fields."""
+
+    def setup_method(self) -> None:
+        """Set up test fixtures."""
+        self.adapter = NemotronJSONAdapter()
+        self.signature = ReactSignature
+
+    def test_parse_react_standard_json(self) -> None:
+        """Test parsing standard JSON with ReAct fields."""
+        completion = """{
+            "next_thought": "I need to calculate the average",
+            "next_tool_name": "python_executor",
+            "next_tool_args": {"code": "sum([3,7,2,9,4])/5"}
+        }"""
+        result = self.adapter.parse(self.signature, completion)
+        assert result["next_thought"] == "I need to calculate the average"
+        assert result["next_tool_name"] == "python_executor"
+        assert result["next_tool_args"] == {"code": "sum([3,7,2,9,4])/5"}
+
+    def test_parse_react_with_final_wrapper(self) -> None:
+        """Test parsing ReAct fields with Nemotron's 'final' wrapper."""
+        completion = """{
+            "final": {
+                "next_thought": "Using python to compute",
+                "next_tool_name": "python_executor",
+                "next_tool_args": {"code": "2+2"}
+            }
+        }"""
+        result = self.adapter.parse(self.signature, completion)
+        assert result["next_thought"] == "Using python to compute"
+        assert result["next_tool_name"] == "python_executor"
+        assert isinstance(result["next_tool_args"], dict)
+
+    def test_parse_react_with_think_block(self) -> None:
+        """Test parsing ReAct fields after <think> block."""
+        completion = """<think>
+I should use the python executor to calculate this.
+</think>
+
+{
+    "next_thought": "Computing average",
+    "next_tool_name": "python_executor",
+    "next_tool_args": {"code": "avg = sum([3,7,2,9,4])/5"}
+}"""
+        result = self.adapter.parse(self.signature, completion)
+        assert "Computing" in result["next_thought"]
+        assert result["next_tool_name"] == "python_executor"
+
+    def test_parse_react_nested_dict_args(self) -> None:
+        """Test parsing when next_tool_args contains nested dict."""
+        completion = """{
+            "next_thought": "Need to search",
+            "next_tool_name": "web_search",
+            "next_tool_args": {"query": "test", "options": {"limit": 10}}
+        }"""
+        result = self.adapter.parse(self.signature, completion)
+        assert result["next_tool_args"]["options"]["limit"] == 10
