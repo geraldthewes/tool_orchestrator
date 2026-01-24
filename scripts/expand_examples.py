@@ -30,9 +30,13 @@ class ExampleExpander:
         examples_dir: str = "data/examples",
     ):
         self.base_url = base_url or os.getenv(
-            "ORCHESTRATOR_BASE_URL", "http://localhost:11434"
+            "TEACHER_BASE_URL", "http://localhost:11434"
         )
-        self.model = model or os.getenv("ORCHESTRATOR_MODEL", "llama3")
+        # Normalize base_url: remove trailing slash and /v1 suffix for consistent URL construction
+        self.base_url = self.base_url.rstrip("/")
+        if self.base_url.endswith("/v1"):
+            self.base_url = self.base_url[:-3]
+        self.model = model or os.getenv("TEACHER_MODEL", "llama3")
         self.examples_dir = Path(examples_dir)
         self.client = httpx.AsyncClient(timeout=120.0)
 
@@ -265,21 +269,21 @@ async def main():
             (
                 "calculate_examples.jsonl",
                 "calculate_examples.jsonl",
-                25,
+                45,
                 "orchestration",
             ),
-            ("python_examples.jsonl", "python_examples.jsonl", 25, "orchestration"),
-            ("search_examples.jsonl", "search_examples.jsonl", 25, "orchestration"),
-            ("delegate_reasoner.jsonl", "delegate_reasoner.jsonl", 15, "orchestration"),
-            ("delegate_coder.jsonl", "delegate_coder.jsonl", 10, "orchestration"),
-            ("delegate_fast.jsonl", "delegate_fast.jsonl", 5, "orchestration"),
+            ("python_examples.jsonl", "python_examples.jsonl", 45, "orchestration"),
+            ("search_examples.jsonl", "search_examples.jsonl", 45, "orchestration"),
+            ("delegate_reasoner.jsonl", "delegate_reasoner.jsonl", 30, "orchestration"),
+            ("delegate_coder.jsonl", "delegate_coder.jsonl", 20, "orchestration"),
+            ("delegate_fast.jsonl", "delegate_fast.jsonl", 10, "orchestration"),
             (
                 "multi_tool_examples.jsonl",
                 "multi_tool_examples.jsonl",
-                20,
+                60,
                 "orchestration",
             ),
-            ("routing_no_tools.jsonl", "routing_no_tools.jsonl", 25, "routing"),
+            ("routing_no_tools.jsonl", "routing_no_tools.jsonl", 45, "routing"),
         ]
 
         total = 0

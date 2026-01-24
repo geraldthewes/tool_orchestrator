@@ -23,3 +23,23 @@
 {"question": "Calculate (sqrt(16) + 2^3) / 4", "answer": "(sqrt(16) + 2^3) / 4 = (4 + 8) / 4 = 3", "expected_keywords": ["3"], "tool": "calculate", "category": "single_tool"}
 {"question": "What is pi * 3^2?", "answer": "pi * 3^2 = pi * 9 \u2248 28.274", "expected_keywords": ["28.27"], "tool": "calculate", "category": "single_tool"}
 {"question": "Calculate the area of a circle with radius 10", "answer": "Area = pi * r^2 = pi * 100 \u2248 314.159", "expected_keywords": ["314"], "tool": "calculate", "category": "single_tool"}
+{"question": "If I purchase 7 tickets each priced at $12.99, what is the total cost before tax?", "answer": "7 \u00d7 12.99 = 90.93", "expected_keywords": ["90.93"], "tool": "calculate", "category": "single_tool"}
+{"question": "If a car travels 350 kilometers in 5 hours, what is its average speed in km/h?", "answer": "350 / 5 = 70 km/h", "expected_keywords": ["70"], "tool": "calculate", "category": "single_tool"}
+{"question": "A delivery driver covered 123 miles on Monday, 87 miles on Tuesday, and 156 miles on Wednesday. What is the total number of miles driven over the three days?", "answer": "123 + 87 + 156 = 366", "expected_keywords": ["366"], "tool": "calculate", "category": "single_tool"}
+{"question": "What is 1,245 minus 378?", "answer": "1245 - 378 = 867", "expected_keywords": ["867"], "tool": "calculate", "category": "single_tool"}
+{"question": "If a rectangle has a length of 15.2 meters and a width of 8.7 meters, what is its area in square meters?", "answer": "Area = 15.2 * 8.7 = 132.24 square meters", "expected_keywords": ["132.24"], "tool": "calculate", "category": "single_tool"}
+{"question": "What is the total cost if you buy 3 items priced at $199.99 each and add a shipping fee of $15.50?", "answer": "3 \u00d7 199.99 + 15.50 = 615.47", "expected_keywords": ["615.47"], "tool": "calculate", "category": "single_tool"}
+{"question": "What is 2^20 + 5^3?", "answer": "2^20 + 5^3 = 1048701", "expected_keywords": ["1048701"], "tool": "calculate", "category": "single_tool"}
+{"question": "Calculate the product of 12 and 15, then subtract 30.", "answer": "12 * 15 - 30 = 180 - 30 = 150", "expected_keywords": ["150"], "tool": "calculate", "category": "single_tool"}
+{"question": "What is 12 raised to the 5th power?", "answer": "12^5 = 248,832", "expected_keywords": ["248832"], "tool": "calculate", "category": "single_tool"}
+{"question": "What is the square root of 2 rounded to three decimal places?", "answer": "The square root of 2 is approximately 1.414.", "expected_keywords": ["1.414"], "tool": "calculate", "category": "single_tool"}
+{"question": "What is the result of (7^3 - 2*15) divided by 5?", "answer": "(7^3 - 2*15) / 5 = 62.6", "expected_keywords": ["62.6"], "tool": "calculate", "category": "single_tool"}
+{"question": "What is the cosine of 30 degrees?", "answer": "cos(30\u00b0) \u2248 0.8660", "expected_keywords": ["0.866"], "tool": "calculate", "category": "single_tool"}
+{"question": "What is sin(30 degrees) plus cos(45 degrees)?", "answer": "sin(30\u00b0) = 0.5, cos(45\u00b0) \u2248 0.7071, so sin(30\u00b0) + cos(45\u00b0) \u2248 1.2071", "expected_keywords": ["1.2071"], "tool": "calculate", "category": "single_tool"}
+{"question": "What is the result of 12 multiplied by 8 minus 15?", "answer": "12 \u00d7 8 \u2013 15 = 96 \u2013 15 = 81", "expected_keywords": ["81"], "tool": "calculate", "category": "single_tool"}
+{"question": "Calculate the hypotenuse of a right triangle with legs of length 9 cm and 12 cm.", "answer": "Using the Pythagorean theorem, the hypotenuse = \u221a(9\u00b2 + 12\u00b2) = \u221a(81 + 144) = \u221a225 = 15 cm.", "expected_keywords": ["15"], "tool": "calculate", "category": "single_tool"}
+{"question": "What is the sum of the first 50 prime numbers?", "answer": "The sum of the first 50 prime numbers is 5117.", "expected_keywords": ["5117"], "tool": "calculate", "category": "single_tool"}
+{"question": "What is 12.5% of 250?", "answer": "12.5% of 250 = 31.25", "expected_keywords": ["31.25"], "tool": "calculate", "category": "single_tool"}
+{"question": "What is 7 factorial divided by 5?", "answer": "7! \u00f7 5 = 5040 \u00f7 5 = 1008", "expected_keywords": ["1008"], "tool": "calculate", "category": "single_tool"}
+{"question": "What is the result of (12 + 8) multiplied by 5?", "answer": "(12 + 8) \u00d7 5 = 100", "expected_keywords": ["100"], "tool": "calculate", "category": "single_tool"}
+{"question": "What is the value of 7^3 minus 2 times 15?", "answer": "7^3 - 2*15 = 313", "expected_keywords": ["313"], "tool": "calculate", "category": "single_tool"}

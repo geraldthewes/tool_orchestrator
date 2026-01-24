@@ -3,3 +3,8 @@
 {"question": "Extract the numbers from: 'I have 3 apples and 5 oranges'", "answer": "3, 5", "expected_keywords": ["3", "5"], "tool": "ask_fast", "category": "delegate"}
 {"question": "Translate 'hello' to French", "answer": "Bonjour", "expected_keywords": ["Bonjour"], "tool": "ask_fast", "category": "delegate"}
 {"question": "What's the sentiment of: 'This product is amazing!'", "answer": "Positive sentiment", "expected_keywords": ["positive"], "tool": "ask_fast", "category": "delegate"}
+{"question": "Summarize in 6 words: The ancient city of Rome was founded on the banks of the Tiber River.", "answer": "Rome founded by Tiber River.", "expected_keywords": ["Rome", "founded", "Tiber"], "tool": "ask_fast", "category": "delegate"}
+{"question": "List the top three planets by size in descending order.", "answer": "Jupiter, Saturn, Uranus.", "expected_keywords": ["Jupiter", "Saturn", "Uranus"], "tool": "ask_fast", "category": "delegate"}
+{"question": "Convert to uppercase: the temperature reached 23\u00b0C at noon", "answer": "THE TEMPERATURE REACHED 23\u00b0C AT NOON", "expected_keywords": ["THE", "TEMPERATURE", "REACHED", "23\u00b0C", "AT", "NOON"], "tool": "ask_fast", "category": "delegate"}
+{"question": "Provide the ISO country code for Germany.", "answer": "DE", "expected_keywords": ["DE"], "tool": "ask_fast", "category": "delegate"}
+{"question": "Extract the numbers from: 'The recipe calls for 2.5 cups of flour and 0.75 liters of milk.'", "answer": "2.5, 0.75", "expected_keywords": ["2.5", "0.75"], "tool": "ask_fast", "category": "delegate"}
