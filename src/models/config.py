@@ -16,6 +16,7 @@ class OrchestratorConfig:
     base_url: str = "http://localhost:8001/v1"
     model: str = "nvidia/Nemotron-Orchestrator-8B"
     temperature: float = 0.7
+    max_tokens: int = 4096
     max_steps: int = 10
 
 

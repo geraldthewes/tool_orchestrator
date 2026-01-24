@@ -115,7 +115,7 @@ def get_orchestrator_lm(
 
     Args:
         temperature: Override temperature (uses config default if None)
-        max_tokens: Override max tokens (uses 1024 if None)
+        max_tokens: Override max tokens (uses config default if None)
 
     Returns:
         Configured DSPy LM instance for orchestrator
@@ -123,6 +123,7 @@ def get_orchestrator_lm(
     base_url = config.orchestrator.base_url
     model = config.orchestrator.model
     temp = temperature if temperature is not None else config.orchestrator.temperature
+    tokens = max_tokens if max_tokens is not None else config.orchestrator.max_tokens
 
     # Build the full model identifier for DSPy
     # DSPy uses "openai/<model>" format for OpenAI-compatible endpoints
@@ -131,7 +132,7 @@ def get_orchestrator_lm(
     full_url = f"{base_url.rstrip('/')}/chat/completions"
     logger.info(
         f"Creating orchestrator LM: model={model_id}, "
-        f"endpoint={full_url}, temperature={temp}"
+        f"endpoint={full_url}, temperature={temp}, max_tokens={tokens}"
     )
 
     lm = dspy.LM(
@@ -139,7 +140,7 @@ def get_orchestrator_lm(
         api_base=base_url,
         api_key="not-needed",  # Most local deployments don't need keys
         temperature=temp,
-        max_tokens=max_tokens or 1024,
+        max_tokens=tokens,
     )
 
     return lm

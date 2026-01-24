@@ -32,7 +32,6 @@ class NemotronJSONAdapter(JSONAdapter):
         self,
         signature: dspy.Signature,
         completion: str,
-        _parse_field: Any = None,
     ) -> dict[str, Any]:
         """
         Parse LM completion, handling Nemotron's "final" wrapper.
@@ -40,14 +39,13 @@ class NemotronJSONAdapter(JSONAdapter):
         Args:
             signature: The DSPy signature defining expected output fields
             completion: Raw LM response string
-            _parse_field: Optional field parser (passed to parent)
 
         Returns:
             Dictionary of parsed output fields
         """
         # First try standard parsing
         try:
-            fields = super().parse(signature, completion, _parse_field)
+            fields = super().parse(signature, completion)
             if fields:
                 return fields
         except Exception as e:
@@ -122,8 +120,9 @@ class NemotronJSONAdapter(JSONAdapter):
         """
         Extract JSON object from text.
 
-        Handles cases where JSON is embedded in markdown code blocks
-        or surrounded by other text.
+        Handles cases where JSON is embedded in markdown code blocks,
+        surrounded by other text, or follows a <think>...</think> block
+        (common with reasoning models like Nemotron-Orchestrator).
 
         Args:
             text: Raw text that may contain JSON
@@ -131,6 +130,12 @@ class NemotronJSONAdapter(JSONAdapter):
         Returns:
             Extracted JSON string, or None if not found
         """
+        # Handle <think>...</think> blocks - extract content after </think>
+        think_end = text.find("</think>")
+        if think_end != -1:
+            text = text[think_end + len("</think>") :].strip()
+            logger.debug("Extracted content after </think> block")
+
         # Try to find JSON in code blocks first
         code_block_pattern = r"```(?:json)?\s*([\s\S]*?)```"
         matches = re.findall(code_block_pattern, text)

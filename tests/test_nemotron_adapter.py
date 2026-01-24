@@ -137,6 +137,59 @@ That's the result."""
         assert "{key: value}" in result["answer"]
 
 
+class TestThinkBlockParsing:
+    """Tests for parsing responses with <think>...</think> blocks."""
+
+    def setup_method(self) -> None:
+        """Set up test fixtures."""
+        self.adapter = NemotronJSONAdapter()
+        self.signature = MockSignature
+
+    def test_parse_with_think_block(self) -> None:
+        """Test parsing JSON after <think> block."""
+        completion = """<think>
+Let me think about this question. The user is asking about Paris.
+I should provide the answer.
+</think>
+
+{"reasoning": "The capital of France is Paris", "answer": "Paris"}"""
+
+        result = self.adapter.parse(self.signature, completion)
+
+        assert result["reasoning"] == "The capital of France is Paris"
+        assert result["answer"] == "Paris"
+
+    def test_parse_with_think_block_and_final_wrapper(self) -> None:
+        """Test parsing <think> block followed by 'final' wrapped JSON."""
+        completion = """<think>
+I need to calculate 2+2.
+2+2 equals 4.
+</think>
+
+{"final": {"reasoning": "Simple arithmetic", "answer": "4"}}"""
+
+        result = self.adapter.parse(self.signature, completion)
+
+        assert result["reasoning"] == "Simple arithmetic"
+        assert result["answer"] == "4"
+
+    def test_parse_long_think_block(self) -> None:
+        """Test parsing with a verbose <think> block."""
+        completion = """<think>
+Okay, the user is asking "What is 2+2?" which is a basic math problem.
+I need to respond with a JSON object.
+First, the answer should be calculated. 2+2 equals 4.
+Let me make sure I format this correctly.
+The user wants reasoning and answer fields.
+</think>
+
+{"reasoning": "2+2 is basic arithmetic that equals 4", "answer": "4"}"""
+
+        result = self.adapter.parse(self.signature, completion)
+
+        assert "4" in result["answer"]
+
+
 class TestExtractJson:
     """Tests for the _extract_json helper method."""
 
