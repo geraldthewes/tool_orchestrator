@@ -6,7 +6,7 @@ SERVICE_URL := http://tool-orchestrator.cluster:9999/v1
 SERVICE_DESC := LLM tool orchestration framework using ReAct-style reasoning
 SERVICE_SOURCE := https://github.com/geraldthewes/tool_orchestrator
 
-.PHONY: help install setup test lint format clean interactive query check-endpoint server server-dev build deploy restart status unregister smoke-test push-config
+.PHONY: help install setup test lint format security clean interactive query check-endpoint server server-dev build deploy restart status unregister smoke-test push-config
 
 help:
 	@echo "ToolOrchestra Commands:"
@@ -19,6 +19,7 @@ help:
 	@echo "  make test          - Run tests"
 	@echo "  make lint          - Run linter (ruff)"
 	@echo "  make format        - Format code (black)"
+	@echo "  make security      - Run security scan (bandit)"
 	@echo "  make clean         - Remove cache files"
 	@echo ""
 	@echo "Running:"
@@ -56,6 +57,9 @@ lint:
 
 format:
 	black src/ tests/
+
+security:
+	bandit -r src/ -ll
 
 clean:
 	find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true

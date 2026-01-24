@@ -242,7 +242,7 @@ def _parse_server_config(data: dict) -> ServerConfig:
         reload_value = reload_value.lower() == "true"
 
     return ServerConfig(
-        host=data.get("host", "0.0.0.0"),
+        host=data.get("host", "0.0.0.0"),  # nosec B104
         port=int(data.get("port", 8000)),
         workers=int(data.get("workers", 1)),
         reload=reload_value,

@@ -44,7 +44,7 @@ def execute_python(code: str, timeout_seconds: int = 30) -> dict:
     logger.info(f"Executing Python code: {code_preview}")
 
     try:
-        response = requests.post(
+        response = requests.post(  # nosec B113
             endpoint,
             json=payload,
             timeout=timeout_seconds + 5,  # Add buffer for network latency

@@ -534,6 +534,7 @@ make setup         # Full setup (install + copy env)
 make test          # Run tests
 make lint          # Run linter (ruff)
 make format        # Format code (black)
+make security      # Run security scan (bandit)
 make clean         # Remove cache files
 make interactive   # Start interactive CLI
 make query Q="..." # Run a single query
