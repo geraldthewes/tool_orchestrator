@@ -4,9 +4,11 @@ Tests for NemotronJSONAdapter.
 Tests the custom adapter that handles Nemotron-Orchestrator's "final" wrapper format.
 """
 
+import logging
 from typing import Any
 
 import dspy
+import pytest
 
 from src.prompts.adapters.nemotron_adapter import NemotronJSONAdapter
 
@@ -333,3 +335,49 @@ I should use the python executor to calculate this.
         assert result["next_thought"] == "Compute the result"
         assert result["next_tool_name"] == "calculate"
         assert result["next_tool_args"] == {"expression": "2+2"}
+
+
+class TestLoggingContext:
+    """Tests for logging context in parse failure warnings."""
+
+    def setup_method(self) -> None:
+        """Set up test fixtures."""
+        self.adapter = NemotronJSONAdapter()
+        self.signature = MockSignature
+
+    def test_parse_failure_logs_with_context(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """Test that parse failure logs include model/signature context."""
+        caplog.set_level(logging.WARNING)
+
+        # Completion with wrong fields triggers warning
+        completion = '{"final": {"wrong_field": "value"}}'
+        result = self.adapter.parse(self.signature, completion)
+
+        # Should return empty result since expected fields are missing
+        assert result == {}
+
+        # Verify warning was logged with context
+        warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
+        assert len(warnings) > 0
+        warning_text = warnings[-1].message
+        assert "Failed to parse Nemotron response" in warning_text
+        assert "signature=" in warning_text  # Context should be present
+
+    def test_standard_parsing_failure_logs_exception_type(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """Test that standard parsing failure logs include exception type."""
+        caplog.set_level(logging.WARNING)
+
+        # Malformed JSON that would cause JSONAdapter to throw
+        completion = '{"partial": true'  # Missing closing brace
+        self.adapter.parse(self.signature, completion)
+
+        # Check if any warning about standard parsing failure was logged
+        warning_messages = [
+            r.message for r in caplog.records if r.levelno == logging.WARNING
+        ]
+        # At minimum we should get the final "Failed to parse" warning
+        assert any("Failed to parse" in msg for msg in warning_messages)

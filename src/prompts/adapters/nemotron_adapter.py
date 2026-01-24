@@ -28,6 +28,17 @@ class NemotronJSONAdapter(JSONAdapter):
     This adapter unwraps the "final" object when present.
     """
 
+    def _get_context_info(self, signature: dspy.Signature) -> str:
+        """Get context string for logging (model name, signature name)."""
+        parts = []
+        if dspy.settings.lm:
+            model = getattr(dspy.settings.lm, "model", None)
+            if model:
+                parts.append(f"model={model}")
+        sig_name = getattr(signature, "__name__", type(signature).__name__)
+        parts.append(f"signature={sig_name}")
+        return f" ({', '.join(parts)})" if parts else ""
+
     def parse(
         self,
         signature: dspy.Signature,
@@ -55,7 +66,9 @@ class NemotronJSONAdapter(JSONAdapter):
                 logger.debug(f"Standard parsing succeeded: {list(fields.keys())}")
                 return fields
         except Exception as e:
-            logger.debug(f"Standard parsing failed: {e}")
+            logger.warning(
+                f"Standard JSONAdapter parsing failed: {type(e).__name__}: {e}"
+            )
 
         # If standard parsing returned empty or failed, check for "final" wrapper
         fields = self._parse_with_final_unwrap(signature, completion)
@@ -64,8 +77,9 @@ class NemotronJSONAdapter(JSONAdapter):
             return fields
 
         # Last resort: return empty dict (will trigger DSPy's error handling)
+        context = self._get_context_info(signature)
         logger.warning(
-            f"Failed to parse Nemotron response. "
+            f"Failed to parse Nemotron response{context}. "
             f"Expected fields: {list(signature.output_fields.keys())}. "
             f"Completion was: {completion[:1000]}{'...' if len(completion) > 1000 else ''}"
         )
@@ -133,7 +147,10 @@ class NemotronJSONAdapter(JSONAdapter):
             return fields
 
         except Exception as e:
-            logger.debug(f"Failed to parse with final unwrap: {e}")
+            context = self._get_context_info(signature)
+            logger.warning(
+                f"Failed to parse with final unwrap: {type(e).__name__}: {e}{context}"
+            )
             return {}
 
     def _extract_json(self, text: str) -> str | None:
@@ -182,6 +199,9 @@ class NemotronJSONAdapter(JSONAdapter):
                     break
 
         if end == -1:
+            logger.debug(f"Could not find matching closing brace in: {text[:200]}...")
             return None
 
-        return text[start : end + 1]
+        extracted = text[start : end + 1]
+        logger.debug(f"Extracted JSON ({len(extracted)} chars)")
+        return extracted
