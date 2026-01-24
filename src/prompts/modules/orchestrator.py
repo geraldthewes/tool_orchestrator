@@ -13,7 +13,7 @@ from typing import Optional, Callable, Any
 import dspy
 
 from ..signatures import ToolOrchestrationTask
-from ..adapters import get_orchestrator_lm
+from ..adapters import get_orchestrator_lm, NemotronJSONAdapter
 from ..adapters.lm_factory import TracedLM
 from ..optimization.checkpoint import CheckpointManager
 from ...tools.registry import ToolRegistry
@@ -232,7 +232,8 @@ class ToolOrchestratorModule(dspy.Module):
         self._tools = self._build_dspy_tools()
 
         # Configure adapter for native function calling (Nemotron compatibility)
-        dspy.settings.adapter = dspy.JSONAdapter(use_native_function_calling=True)
+        # Use NemotronJSONAdapter to handle "final" wrapper in responses
+        dspy.settings.adapter = NemotronJSONAdapter(use_native_function_calling=True)
 
         # Create ReAct module with tools
         self.react = dspy.ReAct(

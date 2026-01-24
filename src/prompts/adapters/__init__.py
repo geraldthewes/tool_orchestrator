@@ -2,7 +2,7 @@
 DSPy Language Model Adapters for ToolOrchestra.
 
 Provides factory functions for creating DSPy LM instances
-from existing configuration.
+from existing configuration, and custom adapters for specific models.
 """
 
 from .lm_factory import (
@@ -13,6 +13,7 @@ from .lm_factory import (
     configure_dspy_default,
     TracedLM,
 )
+from .nemotron_adapter import NemotronJSONAdapter
 
 __all__ = [
     "get_orchestrator_lm",
@@ -21,4 +22,5 @@ __all__ = [
     "get_fast_lm",
     "configure_dspy_default",
     "TracedLM",
+    "NemotronJSONAdapter",
 ]
