@@ -231,6 +231,9 @@ class ToolOrchestratorModule(dspy.Module):
         # Build DSPy tools list
         self._tools = self._build_dspy_tools()
 
+        # Configure adapter for native function calling (Nemotron compatibility)
+        dspy.settings.adapter = dspy.JSONAdapter(use_native_function_calling=True)
+
         # Create ReAct module with tools
         self.react = dspy.ReAct(
             ToolOrchestrationTask,
