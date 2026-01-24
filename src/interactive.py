@@ -7,13 +7,58 @@ with tools and delegate LLMs.
 """
 
 import argparse
+import atexit
 import json
 import logging
+import signal
 import sys
+import threading
 
 from .config import config
 from .orchestrator import ToolOrchestrator
 from .llm_call import LLMClient
+
+# Global shutdown flag for signal handling
+_shutdown_requested = threading.Event()
+_active_clients: list = []  # Track OpenAI clients for cleanup
+
+logger = logging.getLogger(__name__)
+
+
+def _signal_handler(signum: int, frame) -> None:
+    """Handle SIGINT for graceful shutdown."""
+    if _shutdown_requested.is_set():
+        # Second interrupt - force exit
+        logger.debug("Force shutdown requested")
+        _cleanup_clients()
+        sys.exit(1)
+    else:
+        # First interrupt - request graceful shutdown
+        logger.debug("Shutdown requested")
+        _shutdown_requested.set()
+        print("\n\nShutting down... (press Ctrl+C again to force)")
+
+
+def _cleanup_clients() -> None:
+    """Close all tracked OpenAI clients."""
+    for client in _active_clients:
+        try:
+            if hasattr(client, "close") and not getattr(client, "is_closed", False):
+                client.close()
+                logger.debug(f"Closed client: {type(client).__name__}")
+        except Exception as e:
+            logger.debug(f"Error closing client: {e}")
+    _active_clients.clear()
+
+
+def _register_client(client) -> None:
+    """Register an OpenAI client for cleanup on exit."""
+    if hasattr(client, "close"):
+        _active_clients.append(client)
+
+
+# Register cleanup on normal exit
+atexit.register(_cleanup_clients)
 
 
 def setup_logging(verbose: bool = False) -> None:
@@ -115,6 +160,9 @@ class InteractiveCLI:
             llm_client=self.llm_client,
             verbose=verbose,
         )
+        # Register the OpenAI client for cleanup
+        if hasattr(self.llm_client, "orchestrator_client"):
+            _register_client(self.llm_client.orchestrator_client)
 
     def toggle_verbose(self) -> None:
         """Toggle verbose mode."""
@@ -127,14 +175,24 @@ class InteractiveCLI:
         self.orchestrator.steps = []
         print("\nConversation history cleared.\n")
 
-    def process_query(self, query: str) -> None:
-        """Process a user query."""
+    def process_query(self, query: str) -> bool:
+        """Process a user query.
+
+        Returns:
+            True if should continue, False if shutdown requested
+        """
         print("\n" + "─" * 70)
         print("Processing query...")
         print("─" * 70 + "\n")
 
         try:
             result = self.orchestrator.run(query)
+
+            # Check if shutdown was requested during query
+            if _shutdown_requested.is_set():
+                print("\n\nQuery completed, shutting down.\n")
+                return False
+
             print("\n" + "═" * 70)
             print("ANSWER")
             print("═" * 70)
@@ -147,22 +205,33 @@ class InteractiveCLI:
             print("Use /trace to see the full reasoning trace.\n")
 
         except KeyboardInterrupt:
-            print("\n\nQuery interrupted.\n")
+            _shutdown_requested.set()
+            print("\n\nQuery interrupted, shutting down.\n")
+            return False
         except Exception as e:
+            # Check if this is a shutdown-related error
+            if _shutdown_requested.is_set() or "shutdown" in str(e).lower():
+                print("\n\nShutdown in progress.\n")
+                return False
             print(f"\nError: {e}\n")
             if self.verbose:
                 import traceback
 
                 traceback.print_exc()
 
+        return True
+
     def run(self) -> None:
         """Run the interactive CLI loop."""
         print_banner()
 
-        while True:
+        while not _shutdown_requested.is_set():
             try:
                 # Get user input
                 user_input = input(">>> ").strip()
+
+                if _shutdown_requested.is_set():
+                    break
 
                 if not user_input:
                     continue
@@ -189,17 +258,31 @@ class InteractiveCLI:
                         print("Type /help for available commands.\n")
                 else:
                     # Process as a query
-                    self.process_query(user_input)
+                    if not self.process_query(user_input):
+                        break
 
             except KeyboardInterrupt:
+                if _shutdown_requested.is_set():
+                    print("\n")
+                    break
                 print("\n\nType /quit to exit.\n")
             except EOFError:
                 print("\nGoodbye!\n")
                 break
 
+        # Cleanup on exit
+        self.cleanup()
+
+    def cleanup(self) -> None:
+        """Clean up resources."""
+        _cleanup_clients()
+
 
 def main() -> None:
     """Main entry point."""
+    # Set up signal handler for graceful shutdown
+    signal.signal(signal.SIGINT, _signal_handler)
+
     parser = argparse.ArgumentParser(
         description="Tool Orchestrator Interactive CLI",
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -247,31 +330,36 @@ Use /tools in interactive mode to see available tools and delegates.
 
     # Create LLM client with custom URL if provided
     llm_client = LLMClient(orchestrator_url=args.orchestrator_url)
+    _register_client(llm_client.orchestrator_client)
 
-    if args.query:
-        # Single query mode
-        orchestrator = ToolOrchestrator(
-            llm_client=llm_client,
-            verbose=args.verbose,
-        )
+    try:
+        if args.query:
+            # Single query mode
+            orchestrator = ToolOrchestrator(
+                llm_client=llm_client,
+                verbose=args.verbose,
+            )
 
-        result = orchestrator.run(args.query)
+            result = orchestrator.run(args.query)
 
-        if args.json:
-            output = {
-                "query": args.query,
-                "answer": result,
-                "trace": orchestrator.get_trace(),
-            }
-            print(json.dumps(output, indent=2))
+            if args.json:
+                output = {
+                    "query": args.query,
+                    "answer": result,
+                    "trace": orchestrator.get_trace(),
+                }
+                print(json.dumps(output, indent=2))
+            else:
+                print(result)
         else:
-            print(result)
-    else:
-        # Interactive mode
-        cli = InteractiveCLI(verbose=args.verbose)
-        cli.llm_client = llm_client
-        cli.orchestrator.llm_client = llm_client
-        cli.run()
+            # Interactive mode
+            cli = InteractiveCLI(verbose=args.verbose)
+            cli.llm_client = llm_client
+            cli.orchestrator.llm_client = llm_client
+            _register_client(cli.llm_client.orchestrator_client)
+            cli.run()
+    finally:
+        _cleanup_clients()
 
 
 if __name__ == "__main__":
