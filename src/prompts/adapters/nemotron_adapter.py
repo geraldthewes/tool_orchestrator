@@ -43,10 +43,16 @@ class NemotronJSONAdapter(JSONAdapter):
         Returns:
             Dictionary of parsed output fields
         """
+        logger.debug(
+            f"Parsing completion for fields {list(signature.output_fields.keys())}: "
+            f"{completion[:500]}{'...' if len(completion) > 500 else ''}"
+        )
+
         # First try standard parsing
         try:
             fields = super().parse(signature, completion)
             if fields:
+                logger.debug(f"Standard parsing succeeded: {list(fields.keys())}")
                 return fields
         except Exception as e:
             logger.debug(f"Standard parsing failed: {e}")
@@ -60,7 +66,8 @@ class NemotronJSONAdapter(JSONAdapter):
         # Last resort: return empty dict (will trigger DSPy's error handling)
         logger.warning(
             f"Failed to parse Nemotron response. "
-            f"Expected fields: {list(signature.output_fields.keys())}"
+            f"Expected fields: {list(signature.output_fields.keys())}. "
+            f"Completion was: {completion[:1000]}{'...' if len(completion) > 1000 else ''}"
         )
         return {}
 
@@ -93,18 +100,31 @@ class NemotronJSONAdapter(JSONAdapter):
                 return {}
 
             # Check for "final" wrapper
-            if "final" in data and isinstance(data["final"], dict):
-                unwrapped = data["final"]
-                logger.debug(
-                    f"Unwrapped 'final' object with keys: {list(unwrapped.keys())}"
-                )
+            if "final" in data:
+                final_value = data["final"]
 
-                # Filter to expected output fields
-                output_field_names = set(signature.output_fields.keys())
-                fields = {k: v for k, v in unwrapped.items() if k in output_field_names}
+                # Handle case where "final" is a stringified JSON (double-encoded)
+                if isinstance(final_value, str):
+                    try:
+                        final_value = json_repair.loads(final_value)
+                        logger.debug("Parsed stringified 'final' value as JSON")
+                    except Exception:
+                        logger.debug("Could not parse 'final' string as JSON")
+                        final_value = None
 
-                if fields:
-                    return fields
+                if isinstance(final_value, dict):
+                    logger.debug(
+                        f"Unwrapped 'final' object with keys: {list(final_value.keys())}"
+                    )
+
+                    # Filter to expected output fields
+                    output_field_names = set(signature.output_fields.keys())
+                    fields = {
+                        k: v for k, v in final_value.items() if k in output_field_names
+                    }
+
+                    if fields:
+                        return fields
 
             # Also check if fields are directly in data (no wrapper)
             output_field_names = set(signature.output_fields.keys())

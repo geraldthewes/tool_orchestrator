@@ -307,3 +307,29 @@ I should use the python executor to calculate this.
         }"""
         result = self.adapter.parse(self.signature, completion)
         assert result["next_tool_args"]["options"]["limit"] == 10
+
+    def test_parse_react_stringified_final_wrapper(self) -> None:
+        """Test parsing when 'final' value is a stringified JSON (double-encoded)."""
+        # This is the actual format observed in production - the "final" value
+        # is a JSON string, not a nested object
+        completion = (
+            '{"final":"{\\"next_thought\\": \\"I need to calculate\\", '
+            '\\"next_tool_name\\": \\"python_execute\\", '
+            '\\"next_tool_args\\": {\\"code\\": \\"print(2+2)\\"}}"}'
+        )
+        result = self.adapter.parse(self.signature, completion)
+        assert result["next_thought"] == "I need to calculate"
+        assert result["next_tool_name"] == "python_execute"
+        assert result["next_tool_args"] == {"code": "print(2+2)"}
+
+    def test_parse_react_stringified_final_with_newlines(self) -> None:
+        """Test parsing stringified 'final' with embedded newlines."""
+        completion = (
+            '{"final":"{\n  \\"next_thought\\": \\"Compute the result\\",\n  '
+            '\\"next_tool_name\\": \\"calculate\\",\n  '
+            '\\"next_tool_args\\": {\\"expression\\": \\"2+2\\"}\n}"}'
+        )
+        result = self.adapter.parse(self.signature, completion)
+        assert result["next_thought"] == "Compute the result"
+        assert result["next_tool_name"] == "calculate"
+        assert result["next_tool_args"] == {"expression": "2+2"}
