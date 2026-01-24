@@ -93,6 +93,16 @@ def orchestration_quality(example: dspy.Example, prediction: Any, trace=None) ->
 
     predicted_answer = getattr(prediction, "answer", None)
     if predicted_answer is None:
+        # Debug: Log what we actually received
+        attrs = [a for a in dir(prediction) if not a.startswith("_")]
+        logger.warning(
+            f"Prediction missing 'answer' field. "
+            f"Type: {type(prediction).__name__}, "
+            f"Attrs: {attrs}"
+        )
+        # Also log if there's any useful content
+        if hasattr(prediction, "__dict__"):
+            logger.debug(f"Prediction dict: {prediction.__dict__}")
         return 0.0
 
     predicted_answer_lower = predicted_answer.lower()

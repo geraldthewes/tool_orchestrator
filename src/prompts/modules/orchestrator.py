@@ -267,7 +267,7 @@ class ToolOrchestratorModule(dspy.Module):
 
         return tools
 
-    def forward(self, question: str) -> str:
+    def forward(self, question: str) -> dspy.Prediction:
         """
         Run orchestration for a question using DSPy ReAct.
 
@@ -305,14 +305,15 @@ class ToolOrchestratorModule(dspy.Module):
             logger.info("Completed orchestration")
             self._log_trace_summary()
 
-            return answer
+            # Return dspy.Prediction for proper metric evaluation during optimization
+            return dspy.Prediction(answer=answer)
 
         except Exception as e:
             logger.error(
                 f"Orchestration failed: {e} "
                 f"(endpoint={config.orchestrator.base_url}, model={config.orchestrator.model})"
             )
-            return f"Error during orchestration: {e}"
+            return dspy.Prediction(answer=f"Error during orchestration: {e}")
 
     def run(self, query: str) -> str:
         """
@@ -328,7 +329,8 @@ class ToolOrchestratorModule(dspy.Module):
         """
         if self.tracing_context:
             return self._run_with_tracing(query)
-        return self.forward(query)
+        result = self.forward(query)
+        return result.answer
 
     def _run_with_tracing(self, query: str) -> str:
         """Run orchestration with tracing span."""
@@ -342,13 +344,14 @@ class ToolOrchestratorModule(dspy.Module):
             input={"query": query},
         ) as orch_span:
             result = self.forward(query)
+            answer = result.answer
             orch_span.set_output(
                 {
                     "steps_taken": len(self.steps),
-                    "final_answer": result[:500] if result else "",
+                    "final_answer": answer[:500] if answer else "",
                 }
             )
-            return result
+            return answer
 
     def _log_trace_summary(self) -> None:
         """Log a compact trace summary."""

@@ -35,7 +35,11 @@ def _wrap_metric_for_gepa(metric: Callable) -> Callable:
 
     def gepa_metric(gold, pred, trace=None, pred_name=None, pred_trace=None):
         # Call the simple metric with just gold and pred
-        return metric(gold, pred)
+        score = metric(gold, pred)
+        if score == 0.0:
+            question = gold.get("question", "N/A")[:50]
+            logger.debug(f"GEPA metric returned 0.0 for question: '{question}...'")
+        return score
 
     return gepa_metric
 
