@@ -75,7 +75,7 @@ class ChatCompletionRequest(BaseModel):
         default=0.7, ge=0.0, le=2.0, description="Sampling temperature"
     )
     max_tokens: Optional[int] = Field(
-        default=2048, ge=1, le=4096, description="Maximum tokens in response"
+        default=8192, ge=1, le=8192, description="Maximum tokens in response"
     )
     stream: Optional[bool] = Field(
         default=False, description="Whether to stream responses (not supported)"

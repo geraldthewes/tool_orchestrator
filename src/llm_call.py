@@ -36,15 +36,18 @@ class LLMClient:
         self,
         messages: list[dict],
         temperature: float = 0.7,
-        max_tokens: int = 2048,
+        max_tokens: int | None = None,
     ) -> dict:
         """Call the main orchestrator model (Nemotron-Orchestrator-8B)."""
+        resolved_max_tokens = (
+            max_tokens if max_tokens is not None else config.max_tokens
+        )
         try:
             response = self.orchestrator_client.chat.completions.create(
                 model=self.orchestrator_model,
                 messages=messages,  # type: ignore[arg-type]
                 temperature=temperature,
-                max_tokens=max_tokens,
+                max_tokens=resolved_max_tokens,
             )
             return {
                 "success": True,
@@ -65,16 +68,19 @@ class LLMClient:
         model: str,
         prompt: str,
         temperature: float = 0.7,
-        max_tokens: int = 1024,
+        max_tokens: int | None = None,
     ) -> str:
         """Call an OpenAI-compatible endpoint (vLLM, SGLang)."""
+        resolved_max_tokens = (
+            max_tokens if max_tokens is not None else config.max_tokens
+        )
         client = OpenAI(base_url=base_url, api_key="dummy")
         try:
             response = client.chat.completions.create(
                 model=model,
                 messages=[{"role": "user", "content": prompt}],
                 temperature=temperature,
-                max_tokens=max_tokens,
+                max_tokens=resolved_max_tokens,
             )
             return response.choices[0].message.content or ""
         except Exception as e:

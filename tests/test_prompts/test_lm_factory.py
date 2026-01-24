@@ -103,7 +103,7 @@ class TestGetTeacherLM:
                 assert call_kwargs["temperature"] == 0.3
 
     def test_default_max_tokens(self):
-        """Test that default max_tokens is 4096 from config."""
+        """Test that default max_tokens comes from config.max_tokens."""
         with patch.dict(
             "os.environ",
             {
@@ -114,55 +114,34 @@ class TestGetTeacherLM:
         ):
             with patch("src.prompts.adapters.lm_factory.dspy.LM") as mock_lm:
                 with patch("src.prompts.adapters.lm_factory.config") as mock_config:
-                    mock_config.dspy.teacher_max_tokens = 4096
+                    mock_config.max_tokens = 8192
                     mock_lm.return_value = MagicMock()
                     get_teacher_lm()
-
-                    call_kwargs = mock_lm.call_args[1]
-                    assert call_kwargs["max_tokens"] == 4096
-
-    def test_custom_max_tokens_param(self):
-        """Test that custom max_tokens parameter overrides all defaults."""
-        with patch.dict(
-            "os.environ",
-            {
-                "TEACHER_BASE_URL": "http://example.com/v1/",
-                "TEACHER_MODEL": "test-model",
-                "TEACHER_MAX_TOKENS": "2048",
-            },
-            clear=True,
-        ):
-            with patch("src.prompts.adapters.lm_factory.dspy.LM") as mock_lm:
-                with patch("src.prompts.adapters.lm_factory.config") as mock_config:
-                    mock_config.dspy.teacher_max_tokens = 4096
-                    mock_lm.return_value = MagicMock()
-                    get_teacher_lm(max_tokens=8192)
 
                     call_kwargs = mock_lm.call_args[1]
                     assert call_kwargs["max_tokens"] == 8192
 
-    def test_env_var_max_tokens_override(self):
-        """Test that TEACHER_MAX_TOKENS env var overrides config."""
+    def test_custom_max_tokens_param(self):
+        """Test that custom max_tokens parameter overrides config."""
         with patch.dict(
             "os.environ",
             {
                 "TEACHER_BASE_URL": "http://example.com/v1/",
                 "TEACHER_MODEL": "test-model",
-                "TEACHER_MAX_TOKENS": "2048",
             },
             clear=True,
         ):
             with patch("src.prompts.adapters.lm_factory.dspy.LM") as mock_lm:
                 with patch("src.prompts.adapters.lm_factory.config") as mock_config:
-                    mock_config.dspy.teacher_max_tokens = 4096
+                    mock_config.max_tokens = 8192
                     mock_lm.return_value = MagicMock()
-                    get_teacher_lm()
+                    get_teacher_lm(max_tokens=4096)
 
                     call_kwargs = mock_lm.call_args[1]
-                    assert call_kwargs["max_tokens"] == 2048
+                    assert call_kwargs["max_tokens"] == 4096
 
     def test_config_max_tokens_used_when_no_override(self):
-        """Test that config value is used when no env or param override."""
+        """Test that config.max_tokens is used when no param override."""
         with patch.dict(
             "os.environ",
             {
@@ -173,7 +152,7 @@ class TestGetTeacherLM:
         ):
             with patch("src.prompts.adapters.lm_factory.dspy.LM") as mock_lm:
                 with patch("src.prompts.adapters.lm_factory.config") as mock_config:
-                    mock_config.dspy.teacher_max_tokens = 6000
+                    mock_config.max_tokens = 6000
                     mock_lm.return_value = MagicMock()
                     get_teacher_lm()
 

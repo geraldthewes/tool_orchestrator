@@ -16,7 +16,6 @@ class OrchestratorConfig:
     base_url: str = "http://localhost:8001/v1"
     model: str = "nvidia/Nemotron-Orchestrator-8B"
     temperature: float = 0.7
-    max_tokens: int = 4096
     max_steps: int = 10
 
 
@@ -111,7 +110,6 @@ class DSPyConfig:
     """Configuration for DSPy prompt optimization."""
 
     optimized_prompts_path: str = ""
-    teacher_max_tokens: int = 4096
 
 
 @dataclass
@@ -123,6 +121,7 @@ class AppConfig:
     """
 
     version: str = "1.0"
+    max_tokens: int = 8192  # Global max tokens setting
     orchestrator: OrchestratorConfig = field(default_factory=OrchestratorConfig)
     server: ServerConfig = field(default_factory=ServerConfig)
     tools: ToolsConfig = field(default_factory=ToolsConfig)

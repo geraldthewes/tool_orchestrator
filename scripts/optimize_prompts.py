@@ -115,11 +115,6 @@ def parse_args():
         "--teacher-model",
         help="Model name for teacher LLM (overrides TEACHER_MODEL env var)",
     )
-    parser.add_argument(
-        "--teacher-max-tokens",
-        type=int,
-        help="Max tokens for teacher LLM responses (overrides config, default: 4096)",
-    )
     return parser.parse_args()
 
 
@@ -272,7 +267,6 @@ def main():
         gepa_auto=args.gepa_auto,
         teacher_base_url=args.teacher_base_url,
         teacher_model=args.teacher_model,
-        teacher_max_tokens=args.teacher_max_tokens,
     )
 
     saved_paths = {}

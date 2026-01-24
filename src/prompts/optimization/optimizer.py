@@ -64,7 +64,6 @@ class PromptOptimizer:
         resume_from: Optional[Path] = None,
         teacher_base_url: Optional[str] = None,
         teacher_model: Optional[str] = None,
-        teacher_max_tokens: Optional[int] = None,
     ):
         """
         Initialize the optimizer.
@@ -80,7 +79,6 @@ class PromptOptimizer:
             resume_from: Path to checkpoint to resume from
             teacher_base_url: Base URL for teacher LLM (overrides TEACHER_BASE_URL env)
             teacher_model: Model name for teacher LLM (overrides TEACHER_MODEL env)
-            teacher_max_tokens: Max tokens for teacher LLM (overrides TEACHER_MAX_TOKENS env)
         """
         self.strategy = strategy
         self.metric = metric
@@ -92,7 +90,6 @@ class PromptOptimizer:
         self.resume_from = Path(resume_from) if resume_from else None
         self.teacher_base_url = teacher_base_url
         self.teacher_model = teacher_model
-        self.teacher_max_tokens = teacher_max_tokens
 
     def optimize_router(
         self,
@@ -130,7 +127,6 @@ class PromptOptimizer:
         teacher = teacher_lm or get_teacher_lm(
             base_url=self.teacher_base_url,
             model=self.teacher_model,
-            max_tokens=self.teacher_max_tokens,
         )
 
         return self._optimize(
@@ -178,7 +174,6 @@ class PromptOptimizer:
         teacher = teacher_lm or get_teacher_lm(
             base_url=self.teacher_base_url,
             model=self.teacher_model,
-            max_tokens=self.teacher_max_tokens,
         )
 
         return self._optimize(

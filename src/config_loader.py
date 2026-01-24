@@ -318,7 +318,6 @@ def _parse_dspy_config(data: dict) -> DSPyConfig:
     """Parse DSPy configuration from dict."""
     return DSPyConfig(
         optimized_prompts_path=data.get("optimized_prompts_path", ""),
-        teacher_max_tokens=int(data.get("teacher_max_tokens", 4096)),
     )
 
 
@@ -385,6 +384,7 @@ def load_app_config(path: Optional[str] = None, reload: bool = False) -> AppConf
 
     # Parse each section
     version = raw_config.get("version", "1.0")
+    max_tokens = int(raw_config.get("max_tokens", 8192))
 
     orchestrator_data = raw_config.get("orchestrator", {})
     server_data = raw_config.get("server", {})
@@ -398,6 +398,7 @@ def load_app_config(path: Optional[str] = None, reload: bool = False) -> AppConf
     # Build the config
     app_config = AppConfig(
         version=version,
+        max_tokens=max_tokens,
         orchestrator=_parse_orchestrator_config(orchestrator_data),
         server=_parse_server_config(server_data),
         tools=_parse_tools_config(tools_data),

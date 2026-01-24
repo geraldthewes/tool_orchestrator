@@ -9,6 +9,9 @@
 
 version: "1.0"
 
+# Global max_tokens setting - applies to all LLM calls unless overridden
+max_tokens: 8192
+
 # =============================================================================
 # ORCHESTRATOR MODEL
 # =============================================================================
@@ -83,7 +86,6 @@ langfuse:
 
 dspy:
   optimized_prompts_path: ""
-  teacher_max_tokens: 4096  # Max tokens for teacher LLM during optimization
 
 # =============================================================================
 # DELEGATE LLMs
@@ -109,7 +111,6 @@ delegates:
         - "research_synthesis"
     defaults:
       temperature: 0.7
-      max_tokens: 2048
       timeout: 600  # 10 minutes for complex reasoning
     description: "Delegate complex reasoning tasks requiring deep analysis, multi-step thinking, or synthesis of multiple concepts."
 
@@ -130,7 +131,6 @@ delegates:
         - "technical_documentation"
     defaults:
       temperature: 0.3
-      max_tokens: 2048
       timeout: 300  # 5 minutes for code generation
     description: "Delegate coding tasks including code generation, debugging, code review, and technical implementations."
 
@@ -150,6 +150,5 @@ delegates:
         - "classification"
     defaults:
       temperature: 0.7
-      max_tokens: 1024
       timeout: 120  # 2 minutes for quick responses
     description: "Delegate simple tasks requiring fast responses. Good for quick reasoning, simple Q&A, and time-sensitive queries."

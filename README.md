@@ -166,7 +166,7 @@ Interactive API documentation is available at `/docs` (Swagger UI) and `/redoc` 
     {"role": "user", "content": "What is 2 + 2?"}
   ],
   "temperature": 0.7,
-  "max_tokens": 2048,
+  "max_tokens": 8192,
   "stream": false,
   "include_trace": false
 }
@@ -177,7 +177,7 @@ Interactive API documentation is available at `/docs` (Swagger UI) and `/redoc` 
 | `model` | string | `tool-orchestrator` | Model ID (always `tool-orchestrator`) |
 | `messages` | array | required | Conversation messages with `role` and `content` |
 | `temperature` | float | `0.7` | Sampling temperature (0.0 - 2.0) |
-| `max_tokens` | int | `2048` | Maximum tokens in response (1 - 4096) |
+| `max_tokens` | int | `8192` | Maximum tokens in response (1 - 8192) |
 | `stream` | bool | `false` | Enable streaming responses |
 | `include_trace` | bool | `false` | Include orchestration trace in response |
 
@@ -347,7 +347,6 @@ delegates:
         - "quick_answers"
     defaults:
       temperature: 0.7
-      max_tokens: 1024
       timeout: 120
     description: "Fast responses for simple queries"
 ```

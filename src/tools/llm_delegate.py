@@ -9,6 +9,7 @@ import logging
 from openai import OpenAI
 import requests
 
+from ..config import config
 from ..models import ConnectionType, DelegateConnection
 
 logger = logging.getLogger(__name__)
@@ -18,7 +19,7 @@ def call_delegate(
     connection: DelegateConnection,
     prompt: str,
     temperature: float = 0.7,
-    max_tokens: int = 2048,
+    max_tokens: int | None = None,
     timeout: int = 120,
 ) -> dict:
     """
@@ -28,15 +29,16 @@ def call_delegate(
         connection: Connection details for the delegate LLM
         prompt: The task or question
         temperature: Sampling temperature
-        max_tokens: Maximum response tokens
+        max_tokens: Maximum response tokens (uses config.max_tokens if None)
         timeout: Request timeout in seconds
 
     Returns:
         Dictionary with response or error
     """
+    resolved_max_tokens = max_tokens if max_tokens is not None else config.max_tokens
     if connection.type == ConnectionType.OPENAI_COMPATIBLE:
         return _call_openai_compatible(
-            connection, prompt, temperature, max_tokens, timeout
+            connection, prompt, temperature, resolved_max_tokens, timeout
         )
     elif connection.type == ConnectionType.OLLAMA:
         return _call_ollama(connection, prompt, temperature, timeout)
@@ -162,7 +164,7 @@ def call_delegate_by_role(
         role: The delegate role (e.g., 'fast', 'reasoner', 'coder')
         prompt: The task or question
         temperature: Sampling temperature (uses delegate default if None)
-        max_tokens: Maximum response tokens (uses delegate default if None)
+        max_tokens: Maximum response tokens (uses config.max_tokens if None)
 
     Returns:
         Dictionary with response or error
@@ -181,8 +183,6 @@ def call_delegate_by_role(
         temperature=(
             temperature if temperature is not None else delegate.defaults.temperature
         ),
-        max_tokens=(
-            max_tokens if max_tokens is not None else delegate.defaults.max_tokens
-        ),
+        max_tokens=max_tokens,  # Falls back to config.max_tokens in call_delegate
         timeout=delegate.defaults.timeout,
     )

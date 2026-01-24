@@ -82,7 +82,9 @@ class CheckpointManager:
         # Log every ~10% or at least every 20 samples
         interval = max(self._valset_size // 10, 20)
         if (self._processed_count - self._last_logged_progress) >= interval:
-            logger.info(f"Progress: {self._processed_count}/{self._valset_size} samples")
+            logger.info(
+                f"Progress: {self._processed_count}/{self._valset_size} samples"
+            )
             self._last_logged_progress = self._processed_count
 
     def create_metric_wrapper(

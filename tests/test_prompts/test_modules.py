@@ -329,9 +329,7 @@ class TestCheckpointLoading:
         checkpoint_dir = tmp_path / "orchestrator"
         checkpoint_dir.mkdir(parents=True)
 
-        manifest = {
-            "best": {"id": 1, "score": 1.0, "path": "checkpoint_001.json"}
-        }
+        manifest = {"best": {"id": 1, "score": 1.0, "path": "checkpoint_001.json"}}
         (checkpoint_dir / "manifest.json").write_text(json.dumps(manifest))
         (checkpoint_dir / "checkpoint_001.json").write_text("{}")
 

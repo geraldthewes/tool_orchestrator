@@ -41,15 +41,14 @@ def get_teacher_lm(
 
     Configuration priority (highest to lowest):
     1. Function parameters (base_url, model, max_tokens)
-    2. Environment variables (TEACHER_BASE_URL, TEACHER_MODEL, TEACHER_MAX_TOKENS)
-    3. Config file (dspy.teacher_max_tokens)
-    4. Default (4096 for max_tokens)
+    2. Environment variables (TEACHER_BASE_URL, TEACHER_MODEL)
+    3. Config file (max_tokens)
 
     Args:
         base_url: Override base URL (uses TEACHER_BASE_URL env var if None)
         model: Override model name (uses TEACHER_MODEL env var if None)
         temperature: Override temperature (defaults to 0.7 if None)
-        max_tokens: Override max tokens (priority: param > env > config > 4096)
+        max_tokens: Override max tokens (uses config.max_tokens if None)
 
     Returns:
         Configured DSPy LM instance for teacher
@@ -72,16 +71,7 @@ def get_teacher_lm(
         )
 
     temp = temperature if temperature is not None else 0.7
-
-    # Resolve max_tokens: param > env > config > default
-    if max_tokens is not None:
-        resolved_max_tokens = max_tokens
-    else:
-        env_max_tokens = os.environ.get("TEACHER_MAX_TOKENS")
-        if env_max_tokens:
-            resolved_max_tokens = int(env_max_tokens)
-        else:
-            resolved_max_tokens = config.dspy.teacher_max_tokens
+    resolved_max_tokens = max_tokens if max_tokens is not None else config.max_tokens
 
     # Build the full model identifier for DSPy
     # DSPy uses "openai/<model>" format for OpenAI-compatible endpoints
@@ -115,7 +105,7 @@ def get_orchestrator_lm(
 
     Args:
         temperature: Override temperature (uses config default if None)
-        max_tokens: Override max tokens (uses config default if None)
+        max_tokens: Override max tokens (uses config.max_tokens if None)
 
     Returns:
         Configured DSPy LM instance for orchestrator
@@ -123,7 +113,7 @@ def get_orchestrator_lm(
     base_url = config.orchestrator.base_url
     model = config.orchestrator.model
     temp = temperature if temperature is not None else config.orchestrator.temperature
-    tokens = max_tokens if max_tokens is not None else config.orchestrator.max_tokens
+    tokens = max_tokens if max_tokens is not None else config.max_tokens
 
     # Build the full model identifier for DSPy
     # DSPy uses "openai/<model>" format for OpenAI-compatible endpoints
@@ -158,7 +148,7 @@ def get_delegate_lm(
     Args:
         role: The delegate role (e.g., "reasoner", "coder", "fast")
         temperature: Override temperature (uses delegate default if None)
-        max_tokens: Override max tokens (uses delegate default if None)
+        max_tokens: Override max tokens (uses config.max_tokens if None)
         delegates_config: Optional pre-loaded delegates config
 
     Returns:
@@ -179,9 +169,9 @@ def get_delegate_lm(
     conn = delegate.connection
     defaults = delegate.defaults
 
-    # Use provided values or fall back to defaults
+    # Use provided values or fall back to global config
     temp = temperature if temperature is not None else defaults.temperature
-    tokens = max_tokens if max_tokens is not None else defaults.max_tokens
+    tokens = max_tokens if max_tokens is not None else config.max_tokens
 
     # Clamp to capability limit
     if tokens > delegate.capabilities.max_output_tokens:
