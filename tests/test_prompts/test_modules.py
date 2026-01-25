@@ -173,6 +173,7 @@ class TestCreateDspyTool:
         tool = create_dspy_tool(
             name="double",
             description="Doubles a number",
+            parameters={"x": "number to double"},
             handler=handler,
             formatter=formatter,
         )
@@ -192,6 +193,7 @@ class TestCreateDspyTool:
         tool = create_dspy_tool(
             name="add",
             description="Adds two numbers",
+            parameters={"a": "first number", "b": "second number"},
             handler=handler,
             formatter=formatter,
         )
@@ -211,6 +213,7 @@ class TestCreateDspyTool:
         tool = create_dspy_tool(
             name="failing_tool",
             description="A tool that fails",
+            parameters={"input": "any input"},
             handler=handler,
             formatter=formatter,
         )

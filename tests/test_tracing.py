@@ -461,6 +461,7 @@ class TestOrchestratorTracingIntegration:
         tool = create_dspy_tool(
             name="calculate",
             description="Calculate math",
+            parameters={"expression": "math expression"},
             handler=_handle_calculate,
             formatter=format_result_for_llm,
         )
@@ -1119,6 +1120,7 @@ class TestToolSpanTracing:
             tool = create_dspy_tool(
                 name="test_tool",
                 description="A test tool",
+                parameters={"value": "input value"},
                 handler=test_handler,
                 formatter=test_formatter,
                 tracing_context=ctx,
@@ -1150,6 +1152,7 @@ class TestToolSpanTracing:
         tool = create_dspy_tool(
             name="test_tool",
             description="A test tool",
+            parameters={"value": "input value"},
             handler=test_handler,
             formatter=test_formatter,
             tracing_context=None,
@@ -1261,6 +1264,7 @@ class TestToolSpanTracing:
         tool = create_dspy_tool(
             name="test_tool",
             description="A test tool",
+            parameters={"x": "input value"},
             handler=test_handler,
             formatter=test_formatter,
             tracing_context=ctx,
@@ -1289,6 +1293,7 @@ class TestToolSpanTracing:
         tool = create_dspy_tool(
             name="test_tool",
             description="A test tool",
+            parameters={"input": "any input"},
             handler=failing_handler,
             formatter=test_formatter,
             tracing_context=ctx,
@@ -1319,6 +1324,7 @@ class TestOrchestratorTracingWithSpanContextParent:
         tool = create_dspy_tool(
             name="calculate",
             description="Calculate math",
+            parameters={"expression": "math expression"},
             handler=_handle_calculate,
             formatter=format_result_for_llm,
         )

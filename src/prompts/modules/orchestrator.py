@@ -5,6 +5,7 @@ Implements ReAct-style reasoning using DSPy's built-in ReAct module
 with adapters for existing ToolOrchestra tools.
 """
 
+import inspect
 import logging
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -52,6 +53,7 @@ class OrchestrationStep:
 def create_dspy_tool(
     name: str,
     description: str,
+    parameters: dict[str, str],
     handler: Callable[[dict], Any],
     formatter: Callable[[Any], str],
     tracing_context: Optional[TracingContext] = None,
@@ -62,12 +64,13 @@ def create_dspy_tool(
     Args:
         name: Tool name
         description: Tool description
+        parameters: Dict mapping parameter names to descriptions
         handler: Function that executes the tool
         formatter: Function that formats the result
         tracing_context: Optional tracing context for observability
 
     Returns:
-        DSPy-compatible tool function
+        DSPy-compatible tool function with explicit parameter signature
     """
 
     def tool_func(**kwargs) -> str:
@@ -105,6 +108,28 @@ def create_dspy_tool(
     # Set function metadata for DSPy
     tool_func.__name__ = name
     tool_func.__doc__ = description
+
+    # Build explicit signature from parameters dict so DSPy sees named params
+    # instead of **kwargs. All params are optional with None default.
+    params = [
+        inspect.Parameter(
+            param_name,
+            inspect.Parameter.KEYWORD_ONLY,
+            default=None,
+            annotation=str,
+        )
+        for param_name in parameters.keys()
+    ]
+    tool_func.__signature__ = inspect.Signature(
+        parameters=params,
+        return_annotation=str,
+    )
+
+    # Add annotations dict for DSPy's get_type_hints()
+    tool_func.__annotations__ = {
+        param_name: str for param_name in parameters.keys()
+    }
+    tool_func.__annotations__["return"] = str
 
     return tool_func
 
@@ -258,6 +283,7 @@ class ToolOrchestratorModule(dspy.Module):
             dspy_tool = create_dspy_tool(
                 name=name,
                 description=tool_def.description,
+                parameters=tool_def.parameters,
                 handler=tool_def.handler,
                 formatter=tool_def.formatter,
                 tracing_context=self.tracing_context,

@@ -299,6 +299,7 @@ class TestToolExecution:
         tool = create_dspy_tool(
             name="calculate",
             description="Calculate mathematical expressions",
+            parameters={"expression": "math expression like 2+2 or sqrt(16)"},
             handler=_handle_calculate,
             formatter=format_result_for_llm,
         )
@@ -316,6 +317,7 @@ class TestToolExecution:
         tool = create_dspy_tool(
             name="failing_tool",
             description="A tool that fails",
+            parameters={"input": "any input"},
             handler=failing_handler,
             formatter=str,
         )
