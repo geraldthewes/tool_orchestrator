@@ -22,6 +22,104 @@ logger = logging.getLogger(__name__)
 _delegates_config: Optional[DelegatesConfiguration] = None
 
 
+def _estimate_tokens(text: str) -> int:
+    """
+    Estimate token count using character-based heuristic.
+
+    Most LLMs average ~4 characters per token for English text.
+    We use 3.5 to be conservative (overestimate tokens).
+    """
+    if not text:
+        return 0
+    return int(len(text) / 3.5)
+
+
+def _estimate_messages_tokens(messages: list) -> int:
+    """Estimate tokens for a list of chat messages."""
+    total = 0
+    for msg in messages:
+        # Role token overhead (~4 tokens per message for role, formatting)
+        total += 4
+        content = msg.get("content") if isinstance(msg, dict) else getattr(msg, "content", "")
+        if isinstance(content, str):
+            total += _estimate_tokens(content)
+        elif isinstance(content, list):
+            # Handle multi-part content (text, images, etc.)
+            for part in content:
+                if isinstance(part, dict) and "text" in part:
+                    total += _estimate_tokens(part["text"])
+    return total
+
+
+class TokenAwareLM(dspy.LM):
+    """
+    LM wrapper that dynamically adjusts max_tokens based on input size.
+
+    Prevents output truncation when input is large by calculating
+    available output tokens = context_length - estimated_input - buffer.
+    """
+
+    def __init__(
+        self,
+        lm: dspy.LM,
+        context_length: int,
+        min_output_tokens: int = 256,
+        safety_buffer: int = 100,
+    ):
+        self._lm = lm
+        self._context_length = context_length
+        self._min_output_tokens = min_output_tokens
+        self._safety_buffer = safety_buffer
+
+        # Copy required attributes from wrapped LM
+        self.model = lm.model
+        self.cache = lm.cache
+        self.history = lm.history
+        self.callbacks = lm.callbacks
+        self.kwargs = lm.kwargs
+
+    def forward(
+        self,
+        prompt: Optional[str] = None,
+        messages: Optional[list] = None,
+        **kwargs: Any,
+    ) -> Any:
+        # Estimate input tokens
+        if messages:
+            estimated_input = _estimate_messages_tokens(messages)
+        elif prompt:
+            estimated_input = _estimate_tokens(prompt)
+        else:
+            estimated_input = 0
+
+        # Calculate available output tokens
+        available = self._context_length - estimated_input - self._safety_buffer
+
+        # Get requested max_tokens
+        requested = kwargs.get("max_tokens") or self._lm.kwargs.get("max_tokens", config.max_tokens)
+
+        # Clamp if needed
+        if available < requested:
+            adjusted = max(self._min_output_tokens, available)
+            logger.warning(
+                f"Adjusting max_tokens: {requested} -> {adjusted} "
+                f"(input ~{estimated_input} tokens, context {self._context_length})"
+            )
+            kwargs["max_tokens"] = adjusted
+
+        return self._lm.forward(prompt=prompt, messages=messages, **kwargs)
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(object.__getattribute__(self, "_lm"), name)
+
+    def __setattr__(self, name: str, value: Any) -> None:
+        if name in ("_lm", "_context_length", "_min_output_tokens", "_safety_buffer",
+                    "model", "cache", "history", "callbacks", "kwargs"):
+            object.__setattr__(self, name, value)
+        else:
+            setattr(self._lm, name, value)
+
+
 def _get_delegates_config() -> DelegatesConfiguration:
     """Get or load the delegates configuration (cached)."""
     global _delegates_config
@@ -132,6 +230,10 @@ def get_orchestrator_lm(
         temperature=temp,
         max_tokens=tokens,
     )
+
+    # Wrap with TokenAwareLM to prevent output truncation on large inputs
+    context_length = config.orchestrator.context_length
+    lm = TokenAwareLM(lm, context_length=context_length)
 
     return lm
 

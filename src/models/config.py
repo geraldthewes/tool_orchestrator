@@ -17,6 +17,7 @@ class OrchestratorConfig:
     model: str = "nvidia/Nemotron-Orchestrator-8B"
     temperature: float = 0.7
     max_steps: int = 10
+    context_length: int = 16384  # vLLM max_model_len
 
 
 @dataclass
