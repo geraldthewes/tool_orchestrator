@@ -95,6 +95,14 @@ class TokenAwareLM(dspy.LM):
         # Calculate available output tokens
         available = self._context_length - estimated_input - self._safety_buffer
 
+        # Check if input exceeds context length
+        if available <= 0:
+            logger.error(
+                f"Input too large for context window: ~{estimated_input} tokens "
+                f"exceeds context_length {self._context_length} - {self._safety_buffer} buffer. "
+                f"Response will likely be truncated or fail."
+            )
+
         # Get requested max_tokens
         requested = kwargs.get("max_tokens") or self._lm.kwargs.get("max_tokens", config.max_tokens)
 

@@ -319,6 +319,27 @@ class TestTokenAwareLM:
         call_kwargs = mock_lm.forward.call_args[1]
         assert call_kwargs["max_tokens"] == 256
 
+    def test_logs_error_when_input_exceeds_context(self):
+        """Test that error is logged when input exceeds context length."""
+        mock_lm = self._create_mock_lm()
+        wrapper = TokenAwareLM(
+            mock_lm, context_length=500, min_output_tokens=256, safety_buffer=100
+        )
+
+        # Input that exceeds context: 1750 chars / 3.5 = 500 tokens + 4 overhead
+        # Available: 500 - 504 - 100 = -104 (negative, exceeds context)
+        large_content = "x" * 1750
+        messages = [{"role": "user", "content": large_content}]
+
+        with patch("src.prompts.adapters.lm_factory.logger") as mock_logger:
+            wrapper.forward(messages=messages, max_tokens=8192)
+
+            # Should have logged an error about exceeding context
+            mock_logger.error.assert_called_once()
+            error_msg = mock_logger.error.call_args[0][0]
+            assert "Input too large for context window" in error_msg
+            assert "exceeds context_length" in error_msg
+
     def test_handles_prompt_instead_of_messages(self):
         """Test token estimation works with prompt parameter."""
         mock_lm = self._create_mock_lm()
