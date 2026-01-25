@@ -349,21 +349,21 @@ class TestLoggingContext:
         self, caplog: pytest.LogCaptureFixture
     ) -> None:
         """Test that parse failure logs include model/signature context."""
-        caplog.set_level(logging.INFO)
+        caplog.set_level(logging.WARNING)
 
-        # Completion with wrong fields triggers info log
+        # Completion with wrong fields triggers warning log
         completion = '{"final": {"wrong_field": "value"}}'
         result = self.adapter.parse(self.signature, completion)
 
         # Should return empty result since expected fields are missing
         assert result == {}
 
-        # Verify info was logged with context
-        info_records = [r for r in caplog.records if r.levelno == logging.INFO]
-        assert len(info_records) > 0
-        # Find the "Failed to parse" message
+        # Verify warning was logged with context
+        warning_records = [r for r in caplog.records if r.levelno == logging.WARNING]
+        assert len(warning_records) > 0
+        # Find the "All parsing attempts failed" message
         failure_logs = [
-            r for r in info_records if "Failed to parse Nemotron response" in r.message
+            r for r in warning_records if "All parsing attempts failed" in r.message
         ]
         assert len(failure_logs) > 0
         assert "signature=" in failure_logs[-1].message  # Context should be present

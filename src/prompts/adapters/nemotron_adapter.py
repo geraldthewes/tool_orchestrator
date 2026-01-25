@@ -88,10 +88,10 @@ class NemotronJSONAdapter(JSONAdapter):
 
         # Last resort: return empty dict (will trigger DSPy's error handling)
         context = self._get_context_info(signature)
-        logger.info(
-            f"Failed to parse Nemotron response{context}. "
+        logger.warning(
+            f"All parsing attempts failed{context}. "
             f"Expected fields: {list(signature.output_fields.keys())}. "
-            f"Completion was: {completion[:1000]}{'...' if len(completion) > 1000 else ''}"
+            f"LM response: {completion[:1000]}{'...' if len(completion) > 1000 else ''}"
         )
         return {}
 
