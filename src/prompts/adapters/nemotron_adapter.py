@@ -130,9 +130,14 @@ class NemotronJSONAdapter(JSONAdapter):
         Returns:
             Tuple of (parsed fields dict, strategy that succeeded)
         """
-        logger.debug(
-            f"Parsing completion for fields {list(signature.output_fields.keys())}: "
-            f"{completion[:500]}{'...' if len(completion) > 500 else ''}"
+        # Log response metadata at INFO for visibility
+        completion_len = len(completion)
+        preview_len = min(200, completion_len)
+        preview = completion[:preview_len] + ("..." if completion_len > preview_len else "")
+        logger.info(
+            f"Parsing LM response: length={completion_len} chars, "
+            f"fields={list(signature.output_fields.keys())}, "
+            f"preview={preview!r}"
         )
 
         # First try standard parsing
