@@ -9,9 +9,9 @@
 
 version: "1.0"
 
-# Global max_tokens setting - applies to all LLM calls unless overridden
-# Nemotron-Orchestrator-8B supports up to 128K context, but 40K is sufficient for most tasks
-max_tokens: 40960
+# Global max_tokens for LLM output. Must be less than model context window minus input tokens.
+# Nemotron-Orchestrator-8B has 40K total context window.
+max_tokens: 8192
 
 # =============================================================================
 # ORCHESTRATOR MODEL
