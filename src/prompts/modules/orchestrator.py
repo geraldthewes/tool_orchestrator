@@ -324,6 +324,15 @@ class ToolOrchestratorModule(dspy.Module):
             with dspy.context(lm=orchestrator_lm):
                 result = self.react(question=question)
 
+            # Extract steps from trajectory
+            if hasattr(result, "trajectory") and result.trajectory:
+                self.steps = self._extract_steps_from_trajectory(result.trajectory)
+                # Set final_answer on the last step if it's marked as final
+                if self.steps and self.steps[-1].is_final:
+                    self.steps[-1].final_answer = (
+                        result.answer if hasattr(result, "answer") else None
+                    )
+
             # Extract answer from result
             answer = result.answer if hasattr(result, "answer") else str(result)
 
@@ -381,6 +390,66 @@ class ToolOrchestratorModule(dspy.Module):
                 }
             )
             return answer
+
+    def _extract_steps_from_trajectory(
+        self, trajectory: dict
+    ) -> list[OrchestrationStep]:
+        """
+        Convert DSPy ReAct trajectory dict to OrchestrationStep list.
+
+        The trajectory dict contains keys like:
+        - thought_{idx}: The reasoning for this step
+        - tool_name_{idx}: The tool name (or "finish" for final answer)
+        - tool_args_{idx}: The tool arguments (dict or other)
+        - observation_{idx}: The tool output
+
+        Args:
+            trajectory: DSPy ReAct trajectory dictionary
+
+        Returns:
+            List of OrchestrationStep objects
+        """
+        if not trajectory or not isinstance(trajectory, dict):
+            return []
+
+        steps = []
+        idx = 0
+
+        while True:
+            thought_key = f"thought_{idx}"
+            tool_name_key = f"tool_name_{idx}"
+            tool_args_key = f"tool_args_{idx}"
+            observation_key = f"observation_{idx}"
+
+            # Check if this step exists
+            if thought_key not in trajectory and tool_name_key not in trajectory:
+                break
+
+            thought = trajectory.get(thought_key)
+            tool_name = trajectory.get(tool_name_key)
+            tool_args = trajectory.get(tool_args_key)
+            observation = trajectory.get(observation_key)
+
+            # Normalize tool_args to dict
+            if tool_args is None:
+                tool_args = {}
+            elif not isinstance(tool_args, dict):
+                tool_args = {"value": tool_args}
+
+            is_final = tool_name == "finish" if tool_name else False
+
+            step = OrchestrationStep(
+                step_number=idx + 1,
+                reasoning=thought,
+                action=tool_name,
+                action_input=tool_args,
+                observation=observation,
+                is_final=is_final,
+            )
+            steps.append(step)
+            idx += 1
+
+        return steps
 
     def _log_trace_summary(self) -> None:
         """Log a compact trace summary."""

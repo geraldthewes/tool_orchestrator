@@ -320,6 +320,131 @@ class TestMetrics:
         assert 0.3 <= score <= 0.4
 
 
+class TestExtractStepsFromTrajectory:
+    """Tests for _extract_steps_from_trajectory helper method."""
+
+    def test_empty_trajectory_returns_empty_list(self):
+        """Test that empty trajectory returns empty list."""
+        module = ToolOrchestratorModule()
+        steps = module._extract_steps_from_trajectory({})
+        assert steps == []
+
+    def test_none_trajectory_returns_empty_list(self):
+        """Test that None trajectory returns empty list."""
+        module = ToolOrchestratorModule()
+        steps = module._extract_steps_from_trajectory(None)
+        assert steps == []
+
+    def test_non_dict_trajectory_returns_empty_list(self):
+        """Test that non-dict trajectory returns empty list."""
+        module = ToolOrchestratorModule()
+        steps = module._extract_steps_from_trajectory("invalid")
+        assert steps == []
+
+    def test_single_step_extraction(self):
+        """Test extraction of a single step from trajectory."""
+        module = ToolOrchestratorModule()
+        trajectory = {
+            "thought_0": "I need to calculate this",
+            "tool_name_0": "calculate",
+            "tool_args_0": {"expression": "2 + 2"},
+            "observation_0": "4",
+        }
+
+        steps = module._extract_steps_from_trajectory(trajectory)
+
+        assert len(steps) == 1
+        assert steps[0].step_number == 1
+        assert steps[0].reasoning == "I need to calculate this"
+        assert steps[0].action == "calculate"
+        assert steps[0].action_input == {"expression": "2 + 2"}
+        assert steps[0].observation == "4"
+        assert steps[0].is_final is False
+
+    def test_multi_step_extraction(self):
+        """Test extraction of multiple steps from trajectory."""
+        module = ToolOrchestratorModule()
+        trajectory = {
+            "thought_0": "First, I need to search",
+            "tool_name_0": "web_search",
+            "tool_args_0": {"query": "test"},
+            "observation_0": "Search results...",
+            "thought_1": "Now I can answer",
+            "tool_name_1": "finish",
+            "tool_args_1": {"answer": "The answer is 42"},
+            "observation_1": None,
+        }
+
+        steps = module._extract_steps_from_trajectory(trajectory)
+
+        assert len(steps) == 2
+        assert steps[0].step_number == 1
+        assert steps[0].action == "web_search"
+        assert steps[0].is_final is False
+        assert steps[1].step_number == 2
+        assert steps[1].action == "finish"
+        assert steps[1].is_final is True
+
+    def test_finish_tool_marked_as_final(self):
+        """Test that step with tool_name='finish' is marked as final."""
+        module = ToolOrchestratorModule()
+        trajectory = {
+            "thought_0": "I can answer directly",
+            "tool_name_0": "finish",
+            "tool_args_0": {"answer": "Hello!"},
+        }
+
+        steps = module._extract_steps_from_trajectory(trajectory)
+
+        assert len(steps) == 1
+        assert steps[0].is_final is True
+
+    def test_missing_keys_handled_gracefully(self):
+        """Test that missing keys don't cause errors."""
+        module = ToolOrchestratorModule()
+        trajectory = {
+            "thought_0": "Just a thought",
+            # Missing tool_name_0, tool_args_0, observation_0
+        }
+
+        steps = module._extract_steps_from_trajectory(trajectory)
+
+        assert len(steps) == 1
+        assert steps[0].reasoning == "Just a thought"
+        assert steps[0].action is None
+        assert steps[0].action_input == {}
+        assert steps[0].observation is None
+
+    def test_non_dict_tool_args_converted(self):
+        """Test that non-dict tool_args falls back to wrapped dict."""
+        module = ToolOrchestratorModule()
+        trajectory = {
+            "thought_0": "Test",
+            "tool_name_0": "calculate",
+            "tool_args_0": "2 + 2",  # String instead of dict
+            "observation_0": "4",
+        }
+
+        steps = module._extract_steps_from_trajectory(trajectory)
+
+        assert len(steps) == 1
+        assert steps[0].action_input == {"value": "2 + 2"}
+
+    def test_none_tool_args_becomes_empty_dict(self):
+        """Test that None tool_args becomes empty dict."""
+        module = ToolOrchestratorModule()
+        trajectory = {
+            "thought_0": "Test",
+            "tool_name_0": "calculate",
+            "tool_args_0": None,
+        }
+
+        steps = module._extract_steps_from_trajectory(trajectory)
+
+        assert len(steps) == 1
+        assert steps[0].action_input == {}
+
+
 class TestCheckpointLoading:
     """Tests for optimized checkpoint loading."""
 

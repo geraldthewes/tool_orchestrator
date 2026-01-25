@@ -156,6 +156,82 @@ class TestOrchestrator:
 
         assert "Error" in result or "error" in result.lower()
 
+    @patch("src.prompts.modules.orchestrator.get_orchestrator_lm")
+    @patch("src.prompts.modules.orchestrator.dspy.context")
+    def test_run_populates_steps_from_trajectory(self, mock_context, mock_get_lm):
+        """Test that forward() populates self.steps from trajectory."""
+        mock_lm = MagicMock()
+        mock_get_lm.return_value = mock_lm
+
+        mock_context.return_value.__enter__ = Mock()
+        mock_context.return_value.__exit__ = Mock(return_value=False)
+
+        orchestrator = ToolOrchestrator()
+
+        # Mock the react module to return a result with trajectory
+        mock_react_result = Mock()
+        mock_react_result.answer = "The answer is 42"
+        mock_react_result.trajectory = {
+            "thought_0": "I need to calculate something",
+            "tool_name_0": "calculate",
+            "tool_args_0": {"expression": "6 * 7"},
+            "observation_0": "42",
+            "thought_1": "Now I have the answer",
+            "tool_name_1": "finish",
+            "tool_args_1": {"answer": "The answer is 42"},
+            "observation_1": None,
+        }
+        orchestrator._module.react = Mock(return_value=mock_react_result)
+
+        result = orchestrator.run("What is 6 times 7?")
+
+        # Verify the result
+        assert "42" in result
+
+        # Verify steps were populated
+        assert len(orchestrator._module.steps) == 2
+
+        # Verify first step
+        step1 = orchestrator._module.steps[0]
+        assert step1.step_number == 1
+        assert step1.reasoning == "I need to calculate something"
+        assert step1.action == "calculate"
+        assert step1.action_input == {"expression": "6 * 7"}
+        assert step1.observation == "42"
+        assert step1.is_final is False
+
+        # Verify second (final) step
+        step2 = orchestrator._module.steps[1]
+        assert step2.step_number == 2
+        assert step2.action == "finish"
+        assert step2.is_final is True
+        assert step2.final_answer == "The answer is 42"
+
+    @patch("src.prompts.modules.orchestrator.get_orchestrator_lm")
+    @patch("src.prompts.modules.orchestrator.dspy.context")
+    def test_run_handles_missing_trajectory(self, mock_context, mock_get_lm):
+        """Test that forward() handles missing trajectory gracefully."""
+        mock_lm = MagicMock()
+        mock_get_lm.return_value = mock_lm
+
+        mock_context.return_value.__enter__ = Mock()
+        mock_context.return_value.__exit__ = Mock(return_value=False)
+
+        orchestrator = ToolOrchestrator()
+
+        # Mock the react module to return a result without trajectory
+        mock_react_result = Mock()
+        mock_react_result.answer = "Direct answer"
+        del mock_react_result.trajectory  # Ensure no trajectory attribute
+
+        orchestrator._module.react = Mock(return_value=mock_react_result)
+
+        result = orchestrator.run("Simple question")
+
+        # Should still work, just with empty steps
+        assert result == "Direct answer"
+        assert len(orchestrator._module.steps) == 0
+
     def test_delegate_handlers_backward_compat(self):
         """Test delegate_handlers property for backward compatibility."""
         orchestrator = ToolOrchestrator()
