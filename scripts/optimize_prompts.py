@@ -24,6 +24,7 @@ Usage:
 """
 
 import argparse
+import atexit
 import logging
 import sys
 from pathlib import Path
@@ -39,12 +40,29 @@ from src.prompts.optimization import (
     get_train_dev_split,
 )
 from src.prompts.modules import QueryRouterModule, ToolOrchestratorModule
+from src.config import config
+from src.tracing import init_tracing_client, shutdown_tracing, TracingContext
 
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
 )
 logger = logging.getLogger(__name__)
+
+
+def init_langfuse() -> None:
+    """Initialize Langfuse tracing for optimization observability."""
+    tracing_client = init_tracing_client(
+        public_key=config.langfuse.public_key,
+        secret_key=config.langfuse.secret_key,
+        host=config.langfuse.host,
+        debug=config.langfuse.debug,
+    )
+    if tracing_client.enabled:
+        logger.info(f"Langfuse tracing enabled (host: {config.langfuse.host})")
+        atexit.register(shutdown_tracing)
+    else:
+        logger.info(f"Langfuse tracing disabled: {tracing_client.error}")
 
 
 def parse_args():
@@ -162,10 +180,17 @@ def optimize_orchestrator_module(
     optimizer.resume_from = resume_from
 
     logger.info("Optimizing orchestrator module...")
-    module = ToolOrchestratorModule()
-    optimized = optimizer.optimize_orchestrator(
-        module, trainset=trainset, devset=devset
-    )
+    # Create tracing context for observability during optimization
+    tracing_context = TracingContext(execution_id="optimization-orchestrator")
+    tracing_context.start_trace(name="dspy_optimization", metadata={"module": "orchestrator"})
+
+    try:
+        module = ToolOrchestratorModule(tracing_context=tracing_context)
+        optimized = optimizer.optimize_orchestrator(
+            module, trainset=trainset, devset=devset
+        )
+    finally:
+        tracing_context.end_trace(status="completed")
 
     save_path = output_path / "orchestrator.json"
     PromptOptimizer.save(optimized, str(save_path))
@@ -234,6 +259,9 @@ def main():
 
     if args.verbose:
         logging.getLogger().setLevel(logging.DEBUG)
+
+    # Initialize Langfuse for tracing
+    init_langfuse()
 
     logger.info(f"Starting prompt optimization with strategy: {args.strategy}")
 

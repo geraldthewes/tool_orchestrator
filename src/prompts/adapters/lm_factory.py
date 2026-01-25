@@ -95,6 +95,11 @@ class TokenAwareLM(dspy.LM):
         # Calculate available output tokens
         available = self._context_length - estimated_input - self._safety_buffer
 
+        logger.debug(
+            f"TokenAwareLM.forward: input ~{estimated_input} tokens, "
+            f"available ~{available} tokens, context {self._context_length}"
+        )
+
         # Check if input exceeds context length
         if available <= 0:
             logger.error(
