@@ -5,6 +5,7 @@ Handles the "final" wrapper that Nemotron-Orchestrator-8B produces
 when generating final answers in ReAct-style orchestration.
 """
 
+import contextvars
 import logging
 import re
 from typing import Any
@@ -13,6 +14,21 @@ import dspy
 from dspy.adapters import JSONAdapter
 
 logger = logging.getLogger(__name__)
+
+# Context variable to track the current query for logging purposes
+current_query: contextvars.ContextVar[str | None] = contextvars.ContextVar(
+    "current_query", default=None
+)
+
+
+def set_current_query(query: str) -> contextvars.Token:
+    """Set the current query for logging context. Returns token for reset."""
+    return current_query.set(query)
+
+
+def reset_current_query(token: contextvars.Token) -> None:
+    """Reset the current query to its previous value."""
+    current_query.reset(token)
 
 
 class NemotronJSONAdapter(JSONAdapter):
@@ -88,9 +104,12 @@ class NemotronJSONAdapter(JSONAdapter):
 
         # Last resort: return empty dict (will trigger DSPy's error handling)
         context = self._get_context_info(signature)
+        query = current_query.get()
+        query_info = f"Query: {query}\n" if query else ""
         logger.warning(
-            f"All parsing attempts failed{context}. "
-            f"Expected fields: {list(signature.output_fields.keys())}. "
+            f"All parsing attempts failed{context}.\n"
+            f"{query_info}"
+            f"Expected fields: {list(signature.output_fields.keys())}.\n"
             f"LM response: {completion}"
         )
         return {}

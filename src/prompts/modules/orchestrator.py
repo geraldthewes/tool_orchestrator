@@ -14,6 +14,7 @@ import dspy
 
 from ..signatures import ToolOrchestrationTask
 from ..adapters import get_orchestrator_lm, NemotronJSONAdapter
+from ..adapters.nemotron_adapter import set_current_query, reset_current_query
 from ..adapters.lm_factory import TracedLM
 from ..optimization.checkpoint import CheckpointManager
 from ...tools.registry import ToolRegistry
@@ -322,6 +323,8 @@ class ToolOrchestratorModule(dspy.Module):
                     orchestrator_lm, self.tracing_context, "orchestrator"
                 )
 
+        # Set query context for adapter logging
+        query_token = set_current_query(question)
         try:
             with dspy.context(lm=orchestrator_lm):
                 result = self.react(question=question)
@@ -342,6 +345,9 @@ class ToolOrchestratorModule(dspy.Module):
                 f"(endpoint={config.orchestrator.base_url}, model={config.orchestrator.model})"
             )
             return dspy.Prediction(answer=f"Error during orchestration: {e}")
+        finally:
+            # Always reset query context
+            reset_current_query(query_token)
 
     def run(self, query: str) -> str:
         """
