@@ -91,7 +91,7 @@ class NemotronJSONAdapter(JSONAdapter):
         logger.warning(
             f"All parsing attempts failed{context}. "
             f"Expected fields: {list(signature.output_fields.keys())}. "
-            f"LM response: {completion[:1000]}{'...' if len(completion) > 1000 else ''}"
+            f"LM response: {completion}"
         )
         return {}
 
