@@ -118,10 +118,18 @@ def _handle_search(params: dict) -> dict:
             "results": [],
             "total": 0,
         }
+
+    # Convert num_results to int (DSPy passes params as strings from LLM output)
+    num_results_raw = params.get("num_results", 5)
+    try:
+        num_results = int(num_results_raw) if num_results_raw is not None else 5
+    except (ValueError, TypeError):
+        num_results = 5
+
     return search(
         query=params.get("query", ""),
         categories=params.get("categories"),
-        num_results=params.get("num_results", 5),
+        num_results=num_results,
     )
 
 

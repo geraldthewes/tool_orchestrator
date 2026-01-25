@@ -69,6 +69,36 @@ class TestSearchInputValidation:
         assert "error" not in result or result.get("error") is None
         assert result["total"] >= 0
 
+    @patch("src.tools.search.requests.get")
+    def test_handler_with_string_num_results(self, mock_get):
+        """Test that num_results as string is converted to int (DSPy compatibility)."""
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {
+            "results": [
+                {"title": "Test1", "url": "http://test1.com", "content": "Content 1"},
+                {"title": "Test2", "url": "http://test2.com", "content": "Content 2"},
+                {"title": "Test3", "url": "http://test3.com", "content": "Content 3"},
+            ]
+        }
+        mock_get.return_value = mock_response
+
+        tool = ToolRegistry.get("web_search")
+        # DSPy passes params as strings from LLM output
+        result = tool.handler({"query": "test", "num_results": "2"})
+
+        assert "error" not in result or result.get("error") is None
+        assert result["total"] == 2  # Should respect string "2" converted to int
+
+    def test_handler_with_invalid_num_results_falls_back_to_default(self):
+        """Test that invalid num_results falls back to default."""
+        tool = ToolRegistry.get("web_search")
+        # Invalid string that can't be converted to int should use default
+        result = tool.handler({"query": "", "num_results": "invalid"})
+
+        # Will fail validation for empty query, but num_results shouldn't cause crash
+        assert "error" in result
+
 
 class TestMathSolverInputValidation:
     """Tests for calculate tool input validation."""
@@ -169,6 +199,39 @@ class TestPythonExecutorInputValidation:
 
         assert result["success"] is True
         assert "hello" in result["output"]
+
+    @patch("src.tools.python_executor.requests.post")
+    def test_handler_with_string_timeout(self, mock_post):
+        """Test that timeout as string is converted to int (DSPy compatibility)."""
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {
+            "status": "completed",
+            "stdout": "done\n",
+            "stderr": "",
+            "exit_code": 0,
+        }
+        mock_post.return_value = mock_response
+
+        tool = ToolRegistry.get("python_execute")
+        # DSPy passes params as strings from LLM output
+        result = tool.handler({"code": "print('done')", "timeout": "60"})
+
+        assert result["success"] is True
+        # Verify the timeout was converted (60 + 5 = 65 seconds for network buffer)
+        mock_post.assert_called_once()
+        call_kwargs = mock_post.call_args.kwargs
+        assert call_kwargs["timeout"] == 65
+
+    def test_handler_with_invalid_timeout_falls_back_to_default(self):
+        """Test that invalid timeout falls back to default."""
+        tool = ToolRegistry.get("python_execute")
+        # Invalid string that can't be converted to int should use default (30)
+        result = tool.handler({"code": "", "timeout": "invalid"})
+
+        # Will fail validation for empty code, but timeout shouldn't cause crash
+        assert result["success"] is False
+        assert "empty" in result["error"].lower()
 
 
 class TestDelegateInputValidation:

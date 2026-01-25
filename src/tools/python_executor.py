@@ -157,9 +157,17 @@ def _handle_python_execute(params: dict) -> dict:
             "output": "",
             "result": None,
         }
+
+    # Convert timeout to int (DSPy passes params as strings from LLM output)
+    timeout_raw = params.get("timeout", 30)
+    try:
+        timeout_seconds = int(timeout_raw) if timeout_raw is not None else 30
+    except (ValueError, TypeError):
+        timeout_seconds = 30
+
     return execute_python(
         code=params.get("code", ""),
-        timeout_seconds=params.get("timeout", 30),
+        timeout_seconds=timeout_seconds,
     )
 
 
