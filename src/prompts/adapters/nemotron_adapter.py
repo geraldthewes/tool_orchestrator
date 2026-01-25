@@ -76,9 +76,15 @@ class NemotronJSONAdapter(JSONAdapter):
             logger.debug("Successfully parsed after unwrapping 'final' object")
             return fields
 
+        # Try raw tool call format ({"id": "...", "args": {...}})
+        fields = self._parse_raw_tool_call(signature, completion)
+        if fields:
+            logger.debug("Successfully parsed raw tool call format")
+            return fields
+
         # Last resort: return empty dict (will trigger DSPy's error handling)
         context = self._get_context_info(signature)
-        logger.warning(
+        logger.info(
             f"Failed to parse Nemotron response{context}. "
             f"Expected fields: {list(signature.output_fields.keys())}. "
             f"Completion was: {completion[:1000]}{'...' if len(completion) > 1000 else ''}"
@@ -151,6 +157,75 @@ class NemotronJSONAdapter(JSONAdapter):
             logger.warning(
                 f"Failed to parse with final unwrap: {type(e).__name__}: {e}{context}"
             )
+            return {}
+
+    def _parse_raw_tool_call(
+        self,
+        signature: dspy.Signature,
+        completion: str,
+    ) -> dict[str, Any]:
+        """
+        Attempt to parse raw tool call format.
+
+        Handles model output like:
+            {"id": "web_search", "args": {"query": "..."}, "timeout": 10000}
+
+        Maps to DSPy ReAct fields:
+            {"next_tool_name": "web_search", "next_tool_args": '{"query": "..."}'}
+
+        Args:
+            signature: The DSPy signature defining expected output fields
+            completion: Raw LM response string
+
+        Returns:
+            Dictionary of parsed fields, or empty dict if parsing fails
+        """
+        try:
+            import json
+
+            import json_repair
+
+            json_str = self._extract_json(completion)
+            if not json_str:
+                return {}
+
+            data = json_repair.loads(json_str)
+            if not isinstance(data, dict):
+                return {}
+
+            # Check for raw tool call format (has "id" and "args" keys)
+            if "id" not in data or "args" not in data:
+                return {}
+
+            output_field_names = set(signature.output_fields.keys())
+
+            # Only apply mapping if signature expects ReAct action fields
+            if "next_tool_name" not in output_field_names:
+                return {}
+
+            fields = {}
+
+            # Map id -> next_tool_name
+            if "next_tool_name" in output_field_names:
+                fields["next_tool_name"] = data["id"]
+
+            # Map args -> next_tool_args (stringify if dict)
+            if "next_tool_args" in output_field_names:
+                args = data["args"]
+                if isinstance(args, dict):
+                    fields["next_tool_args"] = json.dumps(args)
+                else:
+                    fields["next_tool_args"] = str(args)
+
+            # Generate a default thought if expected
+            if "next_thought" in output_field_names:
+                fields["next_thought"] = f"Using {data['id']} tool"
+
+            logger.debug(f"Parsed raw tool call format: {list(fields.keys())}")
+            return fields
+
+        except Exception as e:
+            logger.debug(f"Raw tool call parsing failed: {type(e).__name__}: {e}")
             return {}
 
     def _extract_json(self, text: str) -> str | None:

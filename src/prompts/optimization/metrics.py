@@ -95,7 +95,7 @@ def orchestration_quality(example: dspy.Example, prediction: Any, trace=None) ->
     if predicted_answer is None:
         # Debug: Log what we actually received
         attrs = [a for a in dir(prediction) if not a.startswith("_")]
-        logger.warning(
+        logger.info(
             f"Prediction missing 'answer' field. "
             f"Type: {type(prediction).__name__}, "
             f"Attrs: {attrs}"

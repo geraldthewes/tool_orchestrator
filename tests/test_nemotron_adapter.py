@@ -349,21 +349,24 @@ class TestLoggingContext:
         self, caplog: pytest.LogCaptureFixture
     ) -> None:
         """Test that parse failure logs include model/signature context."""
-        caplog.set_level(logging.WARNING)
+        caplog.set_level(logging.INFO)
 
-        # Completion with wrong fields triggers warning
+        # Completion with wrong fields triggers info log
         completion = '{"final": {"wrong_field": "value"}}'
         result = self.adapter.parse(self.signature, completion)
 
         # Should return empty result since expected fields are missing
         assert result == {}
 
-        # Verify warning was logged with context
-        warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
-        assert len(warnings) > 0
-        warning_text = warnings[-1].message
-        assert "Failed to parse Nemotron response" in warning_text
-        assert "signature=" in warning_text  # Context should be present
+        # Verify info was logged with context
+        info_records = [r for r in caplog.records if r.levelno == logging.INFO]
+        assert len(info_records) > 0
+        # Find the "Failed to parse" message
+        failure_logs = [
+            r for r in info_records if "Failed to parse Nemotron response" in r.message
+        ]
+        assert len(failure_logs) > 0
+        assert "signature=" in failure_logs[-1].message  # Context should be present
 
     def test_standard_parsing_failure_logs_exception_type(
         self, caplog: pytest.LogCaptureFixture
@@ -376,8 +379,86 @@ class TestLoggingContext:
         self.adapter.parse(self.signature, completion)
 
         # Check if info message about standard parsing failure was logged
-        info_messages = [
-            r.message for r in caplog.records if r.levelno == logging.INFO
-        ]
-        assert any("Standard JSONAdapter parsing failed" in msg for msg in info_messages)
+        info_messages = [r.message for r in caplog.records if r.levelno == logging.INFO]
+        assert any(
+            "Standard JSONAdapter parsing failed" in msg for msg in info_messages
+        )
         assert any("trying fallback" in msg for msg in info_messages)
+
+
+class TestRawToolCallParsing:
+    """Tests for raw tool call format parsing."""
+
+    def setup_method(self) -> None:
+        """Set up test fixtures."""
+        self.adapter = NemotronJSONAdapter()
+        self.react_signature = ReactSignature
+        self.mock_signature = MockSignature
+
+    def test_parse_raw_tool_call_basic(self) -> None:
+        """Test parsing raw tool call format."""
+        completion = '{"id":"web_search","args":{"query":"test query"},"timeout":10000}'
+        result = self.adapter.parse(self.react_signature, completion)
+
+        assert result["next_tool_name"] == "web_search"
+        assert "query" in result["next_tool_args"]
+        assert "test query" in result["next_tool_args"]
+        assert "next_thought" in result
+
+    def test_parse_raw_tool_call_complex_args(self) -> None:
+        """Test parsing raw tool call with complex args."""
+        completion = '{"id":"python_exec","args":{"code":"print(1+1)","timeout":30}}'
+        result = self.adapter.parse(self.react_signature, completion)
+
+        assert result["next_tool_name"] == "python_exec"
+        assert "code" in result["next_tool_args"]
+        assert "print(1+1)" in result["next_tool_args"]
+
+    def test_parse_raw_tool_call_nested_args(self) -> None:
+        """Test parsing raw tool call with nested object in args."""
+        completion = '{"id":"api_call","args":{"endpoint":"/users","params":{"limit":10,"offset":0}}}'
+        result = self.adapter.parse(self.react_signature, completion)
+
+        assert result["next_tool_name"] == "api_call"
+        assert "params" in result["next_tool_args"]
+        assert "limit" in result["next_tool_args"]
+
+    def test_raw_tool_call_wrong_signature(self) -> None:
+        """Test that raw tool call is not applied to non-ReAct signatures."""
+        # mock_signature expects reasoning/answer, not next_tool_*
+        completion = '{"id":"web_search","args":{"query":"test"}}'
+        result = self.adapter.parse(self.mock_signature, completion)
+
+        # Should return empty since signature doesn't expect ReAct fields
+        assert result == {}
+
+    def test_raw_tool_call_missing_id(self) -> None:
+        """Test that incomplete raw tool call format is rejected."""
+        completion = '{"args":{"query":"test"}}'
+        result = self.adapter.parse(self.react_signature, completion)
+
+        # Should return empty since "id" is missing
+        assert result == {}
+
+    def test_raw_tool_call_missing_args(self) -> None:
+        """Test that raw tool call without args is rejected."""
+        completion = '{"id":"web_search"}'
+        result = self.adapter.parse(self.react_signature, completion)
+
+        # Should return empty since "args" is missing
+        assert result == {}
+
+    def test_raw_tool_call_generates_default_thought(self) -> None:
+        """Test that a default thought is generated for raw tool calls."""
+        completion = '{"id":"calculator","args":{"expression":"2+2"}}'
+        result = self.adapter.parse(self.react_signature, completion)
+
+        assert "next_thought" in result
+        assert "calculator" in result["next_thought"]
+
+    def test_raw_tool_call_with_surrounding_text(self) -> None:
+        """Test parsing raw tool call with surrounding text."""
+        completion = 'Here is the tool call: {"id":"search","args":{"q":"test"}} - end'
+        result = self.adapter.parse(self.react_signature, completion)
+
+        assert result["next_tool_name"] == "search"
