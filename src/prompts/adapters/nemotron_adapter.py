@@ -73,13 +73,17 @@ class NemotronJSONAdapter(JSONAdapter):
         # If standard parsing returned empty or failed, check for "final" wrapper
         fields = self._parse_with_final_unwrap(signature, completion)
         if fields:
-            logger.debug("Successfully parsed after unwrapping 'final' object")
+            logger.info(
+                f"Successfully parsed 'final' wrapper format: {list(fields.keys())}"
+            )
             return fields
 
         # Try raw tool call format ({"id": "...", "args": {...}})
         fields = self._parse_raw_tool_call(signature, completion)
         if fields:
-            logger.debug("Successfully parsed raw tool call format")
+            logger.info(
+                f"Successfully parsed raw tool call format: {list(fields.keys())}"
+            )
             return fields
 
         # Last resort: return empty dict (will trigger DSPy's error handling)
