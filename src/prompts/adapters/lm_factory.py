@@ -313,7 +313,14 @@ class TracedLM(dspy.LM):
             result = self._lm.forward(prompt=prompt, messages=messages, **kwargs)
 
             # Extract and record output
-            output_str = str(result)[:1000] if result else ""
+            # Use configurable max length (0 = unlimited)
+            max_len = config.langfuse.output_max_length
+            if result:
+                output_str = str(result)
+                if max_len > 0:
+                    output_str = output_str[:max_len]
+            else:
+                output_str = ""
             gen.set_output(output_str)
 
             # Try to extract usage from result if available

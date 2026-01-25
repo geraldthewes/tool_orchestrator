@@ -8,10 +8,13 @@ when generating final answers in ReAct-style orchestration.
 import contextvars
 import logging
 import re
-from typing import Any
+from typing import TYPE_CHECKING, Any, Optional
 
 import dspy
 from dspy.adapters import JSONAdapter
+
+if TYPE_CHECKING:
+    from ...tracing import TracingContext
 
 logger = logging.getLogger(__name__)
 
@@ -44,6 +47,21 @@ class NemotronJSONAdapter(JSONAdapter):
     This adapter unwraps the "final" object when present.
     """
 
+    def __init__(
+        self,
+        tracing_context: Optional["TracingContext"] = None,
+        **kwargs: Any,
+    ) -> None:
+        """
+        Initialize the adapter.
+
+        Args:
+            tracing_context: Optional tracing context for observability
+            **kwargs: Additional arguments passed to JSONAdapter
+        """
+        super().__init__(**kwargs)
+        self._tracing_context = tracing_context
+
     def _get_context_info(self, signature: dspy.Signature) -> str:
         """Get context string for logging (model name, signature name)."""
         parts = []
@@ -70,6 +88,48 @@ class NemotronJSONAdapter(JSONAdapter):
         Returns:
             Dictionary of parsed output fields
         """
+        expected_fields = list(signature.output_fields.keys())
+
+        # If tracing is enabled, wrap parsing with a span
+        if self._tracing_context:
+            with self._tracing_context.span(
+                name="adapter:parse",
+                input={
+                    "completion": completion,
+                    "expected_fields": expected_fields,
+                },
+            ) as span:
+                result, strategy = self._do_parse(signature, completion)
+                span.set_output(
+                    {
+                        "parsed_fields": list(result.keys()),
+                        "success": bool(result),
+                        "strategy": strategy,
+                    }
+                )
+                if not result:
+                    span.set_status("error")
+                return result
+
+        # No tracing - parse directly
+        result, _ = self._do_parse(signature, completion)
+        return result
+
+    def _do_parse(
+        self,
+        signature: dspy.Signature,
+        completion: str,
+    ) -> tuple[dict[str, Any], str]:
+        """
+        Internal parsing logic that tries multiple strategies.
+
+        Args:
+            signature: The DSPy signature defining expected output fields
+            completion: Raw LM response string
+
+        Returns:
+            Tuple of (parsed fields dict, strategy that succeeded)
+        """
         logger.debug(
             f"Parsing completion for fields {list(signature.output_fields.keys())}: "
             f"{completion[:500]}{'...' if len(completion) > 500 else ''}"
@@ -80,7 +140,7 @@ class NemotronJSONAdapter(JSONAdapter):
             fields = super().parse(signature, completion)
             if fields:
                 logger.debug(f"Standard parsing succeeded: {list(fields.keys())}")
-                return fields
+                return fields, "standard"
         except Exception as e:
             logger.info(
                 f"Standard JSONAdapter parsing failed, trying fallback: {type(e).__name__}: {e}"
@@ -92,7 +152,7 @@ class NemotronJSONAdapter(JSONAdapter):
             logger.info(
                 f"Successfully parsed 'final' wrapper format: {list(fields.keys())}"
             )
-            return fields
+            return fields, "final_unwrap"
 
         # Try raw tool call format ({"id": "...", "args": {...}})
         fields = self._parse_raw_tool_call(signature, completion)
@@ -100,7 +160,7 @@ class NemotronJSONAdapter(JSONAdapter):
             logger.info(
                 f"Successfully parsed raw tool call format: {list(fields.keys())}"
             )
-            return fields
+            return fields, "raw_tool_call"
 
         # Last resort: return empty dict (will trigger DSPy's error handling)
         context = self._get_context_info(signature)
@@ -112,7 +172,7 @@ class NemotronJSONAdapter(JSONAdapter):
             f"Expected fields: {list(signature.output_fields.keys())}.\n"
             f"LM response: {completion}"
         )
-        return {}
+        return {}, "failed"
 
     def _parse_with_final_unwrap(
         self,

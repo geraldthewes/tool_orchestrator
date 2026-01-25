@@ -234,7 +234,10 @@ class ToolOrchestratorModule(dspy.Module):
 
         # Configure adapter for native function calling (Nemotron compatibility)
         # Use NemotronJSONAdapter to handle "final" wrapper in responses
-        dspy.settings.adapter = NemotronJSONAdapter(use_native_function_calling=True)
+        dspy.settings.adapter = NemotronJSONAdapter(
+            use_native_function_calling=True,
+            tracing_context=self.tracing_context,
+        )
 
         # Create ReAct module with tools
         self.react = dspy.ReAct(
