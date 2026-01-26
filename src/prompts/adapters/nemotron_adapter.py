@@ -115,6 +115,33 @@ class NemotronJSONAdapter(JSONAdapter):
         result, _ = self._do_parse(signature, completion)
         return result
 
+    def _detect_repetition(self, completion: str) -> bool:
+        """
+        Detect and log repetitive JSON patterns in LLM output.
+
+        This helps identify when the LLM is stuck in a generation loop,
+        producing repeated output like:
+            {"next_tool_name": "finish", "next_tool_args": {},"next_tool_name": "finish"...}
+
+        Args:
+            completion: Raw LM response string
+
+        Returns:
+            True if repetitive patterns were detected, False otherwise
+        """
+        # Pattern matches repeated JSON field assignments after a closing brace
+        # This catches: }, "next_thought": or }, "next_tool_name": etc.
+        pattern = r'\},\s*"next_(?:thought|tool_name|tool_args)":'
+        matches = re.findall(pattern, completion)
+
+        if len(matches) > 1:
+            logger.warning(
+                f"Repetitive JSON pattern detected ({len(matches)} occurrences). "
+                f"Consider increasing frequency_penalty or adding stop sequences."
+            )
+            return True
+        return False
+
     def _do_parse(
         self,
         signature: dspy.Signature,
@@ -130,6 +157,9 @@ class NemotronJSONAdapter(JSONAdapter):
         Returns:
             Tuple of (parsed fields dict, strategy that succeeded)
         """
+        # Check for repetitive output patterns
+        self._detect_repetition(completion)
+
         # Log response metadata at INFO for visibility
         completion_len = len(completion)
         preview_len = min(200, completion_len)

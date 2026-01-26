@@ -18,6 +18,10 @@ class OrchestratorConfig:
     temperature: float = 0.7
     max_steps: int = 10
     context_length: int = 16384  # vLLM max_model_len
+    # Generation parameters to prevent repetitive output
+    stop: list[str] = field(default_factory=list)
+    frequency_penalty: float = 0.0
+    presence_penalty: float = 0.0
 
 
 @dataclass

@@ -231,18 +231,28 @@ def get_orchestrator_lm(
     model_id = f"openai/{model}"
 
     full_url = f"{base_url.rstrip('/')}/chat/completions"
+    stop_info = f", stop={config.orchestrator.stop}" if config.orchestrator.stop else ""
     logger.info(
         f"Creating orchestrator LM: model={model_id}, "
-        f"endpoint={full_url}, temperature={temp}, max_tokens={tokens}"
+        f"endpoint={full_url}, temperature={temp}, max_tokens={tokens}, "
+        f"frequency_penalty={config.orchestrator.frequency_penalty}, "
+        f"presence_penalty={config.orchestrator.presence_penalty}{stop_info}"
     )
 
-    lm = dspy.LM(
-        model=model_id,
-        api_base=base_url,
-        api_key="not-needed",  # Most local deployments don't need keys
-        temperature=temp,
-        max_tokens=tokens,
-    )
+    # Build LM kwargs, only include stop if configured
+    lm_kwargs: dict[str, Any] = {
+        "model": model_id,
+        "api_base": base_url,
+        "api_key": "not-needed",  # Most local deployments don't need keys
+        "temperature": temp,
+        "max_tokens": tokens,
+        "frequency_penalty": config.orchestrator.frequency_penalty,
+        "presence_penalty": config.orchestrator.presence_penalty,
+    }
+    if config.orchestrator.stop:
+        lm_kwargs["stop"] = config.orchestrator.stop
+
+    lm = dspy.LM(**lm_kwargs)
 
     # Wrap with TokenAwareLM to prevent output truncation on large inputs
     context_length = config.orchestrator.context_length

@@ -462,3 +462,79 @@ class TestRawToolCallParsing:
         result = self.adapter.parse(self.react_signature, completion)
 
         assert result["next_tool_name"] == "search"
+
+
+class TestRepetitionDetection:
+    """Tests for repetition detection in LLM output."""
+
+    def setup_method(self) -> None:
+        """Set up test fixtures."""
+        self.adapter = NemotronJSONAdapter()
+
+    def test_detect_repetition_single_occurrence(self) -> None:
+        """Test that single occurrence does not trigger detection."""
+        completion = '{"next_thought": "test", "next_tool_name": "finish", "next_tool_args": {}}'
+        result = self.adapter._detect_repetition(completion)
+        assert result is False
+
+    def test_detect_repetition_multiple_occurrences(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """Test that multiple occurrences trigger detection and warning."""
+        caplog.set_level(logging.WARNING)
+
+        # Simulate repetitive output from LLM stuck in a loop
+        # Pattern matches `}, "next_*":` so we need closing braces before each repetition
+        completion = (
+            '{"next_thought": "done", "next_tool_name": "finish", "next_tool_args": {},'
+            '"next_tool_name": "finish", "next_tool_args": {},'
+            '"next_tool_name": "finish", "next_tool_args": {}}'
+        )
+        result = self.adapter._detect_repetition(completion)
+
+        assert result is True
+        warning_records = [r for r in caplog.records if r.levelno == logging.WARNING]
+        assert len(warning_records) > 0
+        assert "Repetitive JSON pattern detected" in warning_records[0].message
+        # Pattern matches }, "next_ twice (after each closing brace of next_tool_args)
+        assert "2 occurrences" in warning_records[0].message
+
+    def test_detect_repetition_with_thoughts(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """Test detection when thoughts are also repeated."""
+        caplog.set_level(logging.WARNING)
+
+        completion = (
+            '{"next_thought": "a"}, "next_thought": "b"}, "next_thought": "c"}'
+        )
+        result = self.adapter._detect_repetition(completion)
+
+        assert result is True
+
+    def test_detect_repetition_normal_output(self) -> None:
+        """Test that normal output without repetition passes."""
+        completion = '''{"next_thought": "I need to search for this", "next_tool_name": "web_search", "next_tool_args": {"query": "test query"}}'''
+        result = self.adapter._detect_repetition(completion)
+        assert result is False
+
+    def test_repetition_detection_called_during_parse(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """Test that repetition detection is called during parse."""
+        caplog.set_level(logging.WARNING)
+
+        # Create a completion with repetition (needs 2+ pattern matches to trigger)
+        # Pattern matches `}, "next_` after closing braces
+        completion = (
+            '{"next_thought": "done", "next_tool_name": "finish", "next_tool_args": {},'
+            '"next_tool_name": "finish", "next_tool_args": {},'
+            '"next_tool_name": "finish", "next_tool_args": {}}'
+        )
+
+        # Parse should still work (extracts first JSON) but should log warning
+        self.adapter.parse(ReactSignature, completion)
+
+        # Check warning was logged
+        warning_msgs = [r.message for r in caplog.records if r.levelno == logging.WARNING]
+        assert any("Repetitive JSON pattern detected" in msg for msg in warning_msgs)

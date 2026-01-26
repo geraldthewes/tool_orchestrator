@@ -37,17 +37,52 @@ class LLMClient:
         messages: list[dict],
         temperature: float = 0.7,
         max_tokens: int | None = None,
+        stop: list[str] | None = None,
+        frequency_penalty: float | None = None,
+        presence_penalty: float | None = None,
     ) -> dict:
-        """Call the main orchestrator model (Nemotron-Orchestrator-8B)."""
+        """Call the main orchestrator model (Nemotron-Orchestrator-8B).
+
+        Args:
+            messages: List of chat messages
+            temperature: Sampling temperature
+            max_tokens: Maximum tokens to generate
+            stop: Stop sequences to end generation
+            frequency_penalty: Penalty for token frequency (0.0-2.0)
+            presence_penalty: Penalty for token presence (0.0-2.0)
+        """
         resolved_max_tokens = (
             max_tokens if max_tokens is not None else config.max_tokens
         )
+        resolved_stop = (
+            stop if stop is not None else config.orchestrator.stop or None
+        )
+        resolved_frequency_penalty = (
+            frequency_penalty
+            if frequency_penalty is not None
+            else config.orchestrator.frequency_penalty
+        )
+        resolved_presence_penalty = (
+            presence_penalty
+            if presence_penalty is not None
+            else config.orchestrator.presence_penalty
+        )
+
         try:
+            # Build kwargs, only include stop if configured
+            create_kwargs: dict = {
+                "model": self.orchestrator_model,
+                "messages": messages,
+                "temperature": temperature,
+                "max_tokens": resolved_max_tokens,
+                "frequency_penalty": resolved_frequency_penalty,
+                "presence_penalty": resolved_presence_penalty,
+            }
+            if resolved_stop:
+                create_kwargs["stop"] = resolved_stop
+
             response = self.orchestrator_client.chat.completions.create(
-                model=self.orchestrator_model,
-                messages=messages,  # type: ignore[arg-type]
-                temperature=temperature,
-                max_tokens=resolved_max_tokens,
+                **create_kwargs  # type: ignore[arg-type]
             )
             return {
                 "success": True,

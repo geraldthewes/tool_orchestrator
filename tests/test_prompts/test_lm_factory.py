@@ -9,6 +9,7 @@ from unittest.mock import patch, MagicMock
 
 from src.prompts.adapters.lm_factory import (
     get_teacher_lm,
+    get_orchestrator_lm,
     _estimate_tokens,
     _estimate_messages_tokens,
     TokenAwareLM,
@@ -389,3 +390,113 @@ class TestTokenAwareLM:
         # No max_tokens override should be needed
         call_kwargs = mock_lm.forward.call_args[1]
         assert "max_tokens" not in call_kwargs or call_kwargs.get("max_tokens") == 4096
+
+
+class TestGetOrchestratorLM:
+    """Tests for get_orchestrator_lm function with generation parameters."""
+
+    def test_passes_stop_sequences_when_configured(self):
+        """Test that stop sequences are passed to dspy.LM when configured."""
+        with patch("src.prompts.adapters.lm_factory.dspy.LM") as mock_lm:
+            with patch("src.prompts.adapters.lm_factory.config") as mock_config:
+                mock_config.orchestrator.base_url = "http://test.com/v1"
+                mock_config.orchestrator.model = "test-model"
+                mock_config.orchestrator.temperature = 0.7
+                mock_config.orchestrator.context_length = 16384
+                mock_config.orchestrator.stop = ["<|im_end|>", "<|endoftext|>"]
+                mock_config.orchestrator.frequency_penalty = 0.3
+                mock_config.orchestrator.presence_penalty = 0.1
+                mock_config.max_tokens = 8192
+
+                mock_lm_instance = MagicMock()
+                mock_lm_instance.model = "openai/test-model"
+                mock_lm_instance.cache = None
+                mock_lm_instance.history = []
+                mock_lm_instance.callbacks = []
+                mock_lm_instance.kwargs = {}
+                mock_lm.return_value = mock_lm_instance
+
+                get_orchestrator_lm()
+
+                mock_lm.assert_called_once()
+                call_kwargs = mock_lm.call_args[1]
+                assert call_kwargs["stop"] == ["<|im_end|>", "<|endoftext|>"]
+
+    def test_does_not_pass_stop_when_empty(self):
+        """Test that stop is not passed when empty list configured."""
+        with patch("src.prompts.adapters.lm_factory.dspy.LM") as mock_lm:
+            with patch("src.prompts.adapters.lm_factory.config") as mock_config:
+                mock_config.orchestrator.base_url = "http://test.com/v1"
+                mock_config.orchestrator.model = "test-model"
+                mock_config.orchestrator.temperature = 0.7
+                mock_config.orchestrator.context_length = 16384
+                mock_config.orchestrator.stop = []  # Empty list
+                mock_config.orchestrator.frequency_penalty = 0.0
+                mock_config.orchestrator.presence_penalty = 0.0
+                mock_config.max_tokens = 8192
+
+                mock_lm_instance = MagicMock()
+                mock_lm_instance.model = "openai/test-model"
+                mock_lm_instance.cache = None
+                mock_lm_instance.history = []
+                mock_lm_instance.callbacks = []
+                mock_lm_instance.kwargs = {}
+                mock_lm.return_value = mock_lm_instance
+
+                get_orchestrator_lm()
+
+                mock_lm.assert_called_once()
+                call_kwargs = mock_lm.call_args[1]
+                assert "stop" not in call_kwargs
+
+    def test_passes_frequency_penalty(self):
+        """Test that frequency_penalty is passed to dspy.LM."""
+        with patch("src.prompts.adapters.lm_factory.dspy.LM") as mock_lm:
+            with patch("src.prompts.adapters.lm_factory.config") as mock_config:
+                mock_config.orchestrator.base_url = "http://test.com/v1"
+                mock_config.orchestrator.model = "test-model"
+                mock_config.orchestrator.temperature = 0.7
+                mock_config.orchestrator.context_length = 16384
+                mock_config.orchestrator.stop = []
+                mock_config.orchestrator.frequency_penalty = 0.5
+                mock_config.orchestrator.presence_penalty = 0.0
+                mock_config.max_tokens = 8192
+
+                mock_lm_instance = MagicMock()
+                mock_lm_instance.model = "openai/test-model"
+                mock_lm_instance.cache = None
+                mock_lm_instance.history = []
+                mock_lm_instance.callbacks = []
+                mock_lm_instance.kwargs = {}
+                mock_lm.return_value = mock_lm_instance
+
+                get_orchestrator_lm()
+
+                call_kwargs = mock_lm.call_args[1]
+                assert call_kwargs["frequency_penalty"] == 0.5
+
+    def test_passes_presence_penalty(self):
+        """Test that presence_penalty is passed to dspy.LM."""
+        with patch("src.prompts.adapters.lm_factory.dspy.LM") as mock_lm:
+            with patch("src.prompts.adapters.lm_factory.config") as mock_config:
+                mock_config.orchestrator.base_url = "http://test.com/v1"
+                mock_config.orchestrator.model = "test-model"
+                mock_config.orchestrator.temperature = 0.7
+                mock_config.orchestrator.context_length = 16384
+                mock_config.orchestrator.stop = []
+                mock_config.orchestrator.frequency_penalty = 0.0
+                mock_config.orchestrator.presence_penalty = 0.2
+                mock_config.max_tokens = 8192
+
+                mock_lm_instance = MagicMock()
+                mock_lm_instance.model = "openai/test-model"
+                mock_lm_instance.cache = None
+                mock_lm_instance.history = []
+                mock_lm_instance.callbacks = []
+                mock_lm_instance.kwargs = {}
+                mock_lm.return_value = mock_lm_instance
+
+                get_orchestrator_lm()
+
+                call_kwargs = mock_lm.call_args[1]
+                assert call_kwargs["presence_penalty"] == 0.2

@@ -23,6 +23,13 @@ orchestrator:
   model: "nvidia/Nemotron-Orchestrator-8B"
   temperature: 0.7
   max_steps: 10
+  # Generation parameters to prevent repetitive output
+  # Nemotron-Orchestrator-8B is Qwen3-derived; these are its stop tokens
+  stop:
+    - "<|im_end|>"
+    - "<|endoftext|>"
+  frequency_penalty: 0.3  # Discourage repeating tokens (0.0-2.0)
+  presence_penalty: 0.1   # Discourage reusing tokens (0.0-2.0)
 
 # =============================================================================
 # API SERVER

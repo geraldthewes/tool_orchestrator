@@ -314,6 +314,32 @@ cp config/config.yaml.template config/config.yaml
 
 **Note:** `config/config.yaml` is gitignored as it may contain secrets (API keys).
 
+### Orchestrator Generation Parameters
+
+The orchestrator supports additional generation parameters to prevent repetitive output (a common issue where the LLM gets stuck repeating the same JSON fragments):
+
+```yaml
+orchestrator:
+  base_url: "http://localhost:8001/v1"
+  model: "nvidia/Nemotron-Orchestrator-8B"
+  temperature: 0.7
+  max_steps: 10
+  # Generation parameters to prevent repetitive output
+  stop:
+    - "<|im_end|>"
+    - "<|endoftext|>"
+  frequency_penalty: 0.3  # Discourage repeating tokens (0.0-2.0)
+  presence_penalty: 0.1   # Discourage reusing tokens (0.0-2.0)
+```
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `stop` | `[]` | Stop sequences to end generation. For Qwen3-derived models (like Nemotron-Orchestrator-8B), use `["<\|im_end\|>", "<\|endoftext\|>"]` |
+| `frequency_penalty` | `0.0` | Penalty for repeating tokens. Higher values (0.3-0.5) discourage repetition. |
+| `presence_penalty` | `0.0` | Penalty for using tokens that have appeared. Higher values encourage variety. |
+
+These parameters are passed to the LLM inference endpoint (vLLM/SGLang/etc.) via the OpenAI-compatible API.
+
 ### Environment Variable Interpolation
 
 The config file supports `${VAR:-default}` syntax for environment variables:
@@ -747,6 +773,29 @@ Check SearXNG service:
 ```bash
 curl "$SEARXNG_ENDPOINT?q=test&format=json"
 ```
+
+### Repetitive LLM output
+
+If you see repeated JSON fragments in the orchestrator output (e.g., `"next_tool_name": "finish"` repeated many times), this indicates the LLM is stuck in a generation loop. Solutions:
+
+1. **Add stop sequences** - Configure stop tokens for your model:
+   ```yaml
+   orchestrator:
+     stop:
+       - "<|im_end|>"
+       - "<|endoftext|>"
+   ```
+
+2. **Increase frequency penalty** - Discourage token repetition:
+   ```yaml
+   orchestrator:
+     frequency_penalty: 0.3
+   ```
+
+3. **Check logs** - The adapter logs warnings when repetition is detected:
+   ```
+   WARNING - Repetitive JSON pattern detected (N occurrences). Consider increasing frequency_penalty or adding stop sequences.
+   ```
 
 ## Contributing
 
