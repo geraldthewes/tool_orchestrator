@@ -464,6 +464,81 @@ class TestRawToolCallParsing:
         assert result["next_tool_name"] == "search"
 
 
+class TestMalformedJsonRecovery:
+    """Tests for recovering valid JSON from malformed LLM output."""
+
+    def setup_method(self) -> None:
+        """Set up test fixtures."""
+        self.adapter = NemotronJSONAdapter()
+        self.react_signature = ReactSignature
+
+    def test_extract_json_with_trailing_garbage(self) -> None:
+        """Test extraction when valid JSON is followed by garbage."""
+        # This mimics the actual malformed output from the model
+        completion = (
+            '{"next_thought": "Testing", "next_tool_name": "web_search", '
+            '"next_tool_args": {"query": "test", "num_results": "3"}},'
+            '"\n\n\n\n\n\n\n\n\n\n\n\n\n'
+        )
+        result = self.adapter._extract_json(completion)
+
+        # Should extract just the valid JSON part
+        assert result is not None
+        assert result.endswith("}")
+        assert "\n\n\n" not in result
+
+    def test_extract_json_no_closing_brace_repairs_json(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """Test that we repair JSON when outer brace is missing."""
+        caplog.set_level(logging.DEBUG)
+
+        # Model outputs valid JSON but continues without closing the outer object
+        # Structure: {..."next_tool_args": {...},"\n\n\n... - outer brace never closes
+        # Note: Only ONE } after next_tool_args, so outer object is unclosed
+        completion = (
+            '{"next_thought": "I need to search", "next_tool_name": "web_search", '
+            '"next_tool_args": {"query": "test"},"\n\n\n\n\n\n\n'
+        )
+        result = self.adapter._extract_json(completion)
+
+        assert result is not None
+        # Should repair JSON by truncating garbage and adding closing brace
+        import json
+        parsed = json.loads(result)
+        assert parsed["next_tool_name"] == "web_search"
+        assert parsed["next_tool_args"] == {"query": "test"}
+
+        # Should log that brace matching failed and we used repair
+        assert any("Brace matching failed" in r.message for r in caplog.records)
+        assert any("Repaired JSON" in r.message for r in caplog.records)
+
+    def test_parse_malformed_output_succeeds(self) -> None:
+        """Test that parsing succeeds even with trailing garbage."""
+        # Real-world example of malformed output
+        completion = (
+            '{"next_thought": "The search results mention several tools", '
+            '"next_tool_name": "web_search", '
+            '"next_tool_args": {"query": "database migration tools", '
+            '"categories": "technology", "num_results": "3"}},'
+            '"\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n'
+        )
+
+        result = self.adapter.parse(self.react_signature, completion)
+
+        assert result != {}
+        assert result["next_tool_name"] == "web_search"
+        assert "next_thought" in result
+
+    def test_extract_json_completely_malformed(self) -> None:
+        """Test that completely malformed JSON returns None."""
+        completion = '{"key": "value'  # No closing quote or brace
+        result = self.adapter._extract_json(completion)
+
+        # No valid JSON can be extracted
+        assert result is None
+
+
 class TestRepetitionDetection:
     """Tests for repetition detection in LLM output."""
 

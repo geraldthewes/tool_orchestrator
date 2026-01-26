@@ -354,6 +354,9 @@ class NemotronJSONAdapter(JSONAdapter):
         surrounded by other text, or follows a <think>...</think> block
         (common with reasoning models like Nemotron-Orchestrator).
 
+        Also handles malformed output where the model produces valid JSON
+        followed by garbage (e.g., trailing newlines without closing brace).
+
         Args:
             text: Raw text that may contain JSON
 
@@ -391,10 +394,110 @@ class NemotronJSONAdapter(JSONAdapter):
                     end = i
                     break
 
-        if end == -1:
-            logger.debug(f"Could not find matching closing brace in: {text[:200]}...")
+        if end != -1:
+            extracted = text[start : end + 1]
+            logger.debug(f"Extracted JSON ({len(extracted)} chars)")
+            return extracted
+
+        # Brace matching failed - model likely output valid JSON then garbage
+        # Try to find the longest valid JSON by testing each } position
+        logger.debug("Brace matching failed, trying to find valid JSON prefix")
+        return self._find_valid_json_prefix(text, start)
+
+    def _find_valid_json_prefix(self, text: str, start: int) -> str | None:
+        """
+        Find the longest valid JSON object starting at `start`.
+
+        When the LLM produces valid JSON followed by garbage (e.g., trailing
+        commas and newlines without a closing brace), this method tries each
+        closing brace position to find where valid JSON ends.
+
+        If no valid JSON is found, it attempts to repair by adding missing
+        closing braces.
+
+        Args:
+            text: The full text containing JSON
+            start: Position of the opening brace
+
+        Returns:
+            Valid JSON string, or None if not found
+        """
+        import json
+
+        # Find all } positions after start
+        brace_positions = []
+        for i, char in enumerate(text[start:], start):
+            if char == "}":
+                brace_positions.append(i)
+
+        if not brace_positions:
+            logger.debug("No closing braces found")
             return None
 
-        extracted = text[start : end + 1]
-        logger.debug(f"Extracted JSON ({len(extracted)} chars)")
-        return extracted
+        # Try from the last } backwards to find valid JSON
+        # This finds the longest valid JSON prefix
+        for end_pos in reversed(brace_positions):
+            candidate = text[start : end_pos + 1]
+            try:
+                json.loads(candidate)
+                logger.info(
+                    f"Found valid JSON prefix at position {end_pos} "
+                    f"({len(candidate)} chars, truncated {len(text) - end_pos - 1} chars of garbage)"
+                )
+                return candidate
+            except json.JSONDecodeError:
+                continue
+
+        # No valid JSON found - try to repair by adding missing closing braces
+        # Common pattern: model outputs {...},"\n\n\n (missing outer })
+        logger.debug("Trying to repair JSON by adding missing closing braces")
+        return self._try_repair_json(text, start, brace_positions[-1])
+
+    def _try_repair_json(self, text: str, start: int, last_brace: int) -> str | None:
+        """
+        Try to repair JSON by truncating garbage and adding missing braces.
+
+        Args:
+            text: The full text containing JSON
+            start: Position of the opening brace
+            last_brace: Position of the last closing brace found
+
+        Returns:
+            Repaired JSON string, or None if repair failed
+        """
+        import json
+
+        # Extract up to the last } and try adding closing braces
+        base = text[start : last_brace + 1]
+
+        # Find where garbage starts (typically },"\n or }," followed by garbage)
+        # Look for pattern: },<anything that's not valid JSON continuation>
+        garbage_pattern = re.search(r'\},\s*"[\n\s]', base)
+        if garbage_pattern:
+            # Truncate at the garbage and close the object
+            truncate_pos = garbage_pattern.start() + 1  # Keep the }
+            candidate = base[:truncate_pos] + "}"
+            try:
+                json.loads(candidate)
+                logger.info(
+                    f"Repaired JSON by truncating garbage at position {truncate_pos} "
+                    f"and adding closing brace"
+                )
+                return candidate
+            except json.JSONDecodeError:
+                pass
+
+        # Try adding 1-3 closing braces to see if it becomes valid
+        for num_braces in range(1, 4):
+            candidate = base + "}" * num_braces
+            try:
+                json.loads(candidate)
+                logger.info(
+                    f"Repaired JSON by adding {num_braces} closing brace(s)"
+                )
+                return candidate
+            except json.JSONDecodeError:
+                continue
+
+        logger.debug("Could not repair JSON")
+        return None
