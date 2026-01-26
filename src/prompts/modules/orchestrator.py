@@ -126,9 +126,7 @@ def create_dspy_tool(
     )
 
     # Add annotations dict for DSPy's get_type_hints()
-    tool_func.__annotations__ = {
-        param_name: str for param_name in parameters.keys()
-    }
+    tool_func.__annotations__ = {param_name: str for param_name in parameters.keys()}
     tool_func.__annotations__["return"] = str
 
     return tool_func
@@ -492,6 +490,13 @@ class ToolOrchestratorModule(dspy.Module):
                     f"{id_prefix}Step {step.step_number} [FINAL]: {step.action}"
                 )
             else:
+                # Log full error at ERROR level for debugging
+                if step.observation and "Execution error" in step.observation:
+                    logger.error(
+                        f"{id_prefix}Step {step.step_number} execution failed:\n"
+                        f"{step.observation}"
+                    )
+
                 obs_preview = (
                     (step.observation[:80] + "...")
                     if step.observation and len(step.observation) > 80
