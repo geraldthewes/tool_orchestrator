@@ -1,7 +1,10 @@
 """
 Request-scoped tracing context using Langfuse SDK v3.
 
-Uses OpenTelemetry-based API with automatic context propagation.
+Uses explicit TraceContext propagation for reliable parent-child linking,
+especially when DSPy runs evaluations in different execution contexts where
+OTEL-based implicit context propagation may fail.
+
 Provides context managers for managing trace lifecycle, spans, and generations
 with automatic graceful degradation when tracing is disabled.
 """
@@ -10,9 +13,12 @@ import logging
 import time
 from contextlib import contextmanager
 from dataclasses import dataclass, field
-from typing import Any, Generator, Optional
+from typing import TYPE_CHECKING, Any, Generator, Optional
 
 from .client import get_tracing_client
+
+if TYPE_CHECKING:
+    from langfuse.types import TraceContext
 
 logger = logging.getLogger(__name__)
 
@@ -23,7 +29,8 @@ class TracingContext:
     Request-scoped tracing context using Langfuse SDK v3.
 
     Manages the lifecycle of a trace for a single API request,
-    including nested spans and generations via OTEL context propagation.
+    including nested spans and generations via explicit TraceContext propagation
+    for reliable parent-child linking across execution boundaries.
     """
 
     execution_id: str
@@ -33,6 +40,8 @@ class TracingContext:
     _root_span: Any = field(default=None, repr=False)
     _enabled: bool = field(default=False, repr=False)
     _start_time: float = field(default_factory=time.time, repr=False)
+    _trace_id: Optional[str] = field(default=None, repr=False)
+    _root_span_id: Optional[str] = field(default=None, repr=False)
 
     def __post_init__(self):
         """Initialize tracing state based on client availability."""
@@ -79,6 +88,12 @@ class TracingContext:
             # Enter the context manager to get the actual span object
             self._root_span = self._context_manager.__enter__()
 
+            # Capture trace_id and span_id for explicit context propagation
+            # This allows child spans/generations to link properly even
+            # across thread/async boundaries where OTEL context may fail
+            self._trace_id = getattr(self._root_span, "trace_id", None)
+            self._root_span_id = getattr(self._root_span, "id", None)
+
             # Set trace-level attributes on the span (not the context manager)
             self._root_span.update_trace(
                 user_id=self.user_id,
@@ -89,6 +104,29 @@ class TracingContext:
         except Exception as e:
             logger.warning(f"Failed to start trace: {e}")
             self._root_span = None
+
+    def get_trace_context(self) -> Optional["TraceContext"]:
+        """
+        Get TraceContext for explicit parent linking in child observations.
+
+        Returns a TraceContext object that can be passed to child spans/generations
+        to ensure proper nesting even when OTEL context propagation fails
+        (e.g., across thread boundaries or in DSPy evaluation contexts).
+
+        Returns:
+            TraceContext with trace_id and parent_span_id, or None if not available.
+        """
+        if not self._trace_id:
+            return None
+        try:
+            from langfuse.types import TraceContext
+
+            return TraceContext(
+                trace_id=self._trace_id, parent_span_id=self._root_span_id
+            )
+        except ImportError:
+            logger.warning("Failed to import TraceContext from langfuse.types")
+            return None
 
     def end_trace(
         self,
@@ -147,6 +185,7 @@ class TracingContext:
             enabled=self._enabled,
             metadata=metadata,
             input=input,
+            _trace_context=self.get_trace_context(),
         )
         try:
             span_ctx.start()
@@ -183,6 +222,7 @@ class TracingContext:
             input=input,
             metadata=metadata,
             model_parameters=model_parameters,
+            _trace_context=self.get_trace_context(),
         )
         try:
             gen_ctx.start()
@@ -204,6 +244,8 @@ class SpanContext:
     _start_time: float = field(default=0.0, repr=False)
     _output: Optional[dict] = field(default=None, repr=False)
     _status: str = field(default="success", repr=False)
+    _trace_context: Optional[Any] = field(default=None, repr=False)
+    _span_id: Optional[str] = field(default=None, repr=False)
 
     def start(self) -> None:
         """Start the span using v3 API."""
@@ -217,9 +259,10 @@ class SpanContext:
         try:
             self._start_time = time.time()
 
-            # Create span using v3 API - OTEL handles nesting automatically
+            # Create span using v3 API with explicit trace_context for reliable nesting
             # start_as_current_observation returns a context manager
             self._context_manager = client.client.start_as_current_observation(
+                trace_context=self._trace_context,
                 as_type="span",
                 name=self.name,
                 metadata=self.metadata,
@@ -227,6 +270,9 @@ class SpanContext:
             )
             # Enter the context manager to get the actual span object
             self._span = self._context_manager.__enter__()
+
+            # Capture span_id for child nesting
+            self._span_id = getattr(self._span, "id", None)
         except Exception as e:
             logger.warning(f"Failed to start span '{self.name}': {e}")
             self._span = None
@@ -261,6 +307,31 @@ class SpanContext:
         """Set the span status."""
         self._status = status
 
+    def _get_child_trace_context(self) -> Optional[Any]:
+        """
+        Get TraceContext for child observations.
+
+        Uses this span as the parent for proper nesting.
+        Falls back to parent's trace_context if span_id not available.
+        """
+        if not self._trace_context:
+            return None
+        if not self._span_id:
+            return self._trace_context  # Fall back to parent's context
+
+        try:
+            from langfuse.types import TraceContext
+
+            # Get trace_id from parent context (TraceContext is a TypedDict)
+            trace_id = self._trace_context.get("trace_id")
+            if not trace_id:
+                return self._trace_context
+
+            return TraceContext(trace_id=trace_id, parent_span_id=self._span_id)
+        except ImportError:
+            logger.warning("Failed to import TraceContext from langfuse.types")
+            return self._trace_context
+
     @contextmanager
     def child_span(
         self,
@@ -268,12 +339,13 @@ class SpanContext:
         metadata: Optional[dict] = None,
         input: Optional[dict] = None,
     ) -> Generator["SpanContext", None, None]:
-        """Create a child span - nesting handled automatically by OTEL."""
+        """Create a child span with explicit trace context for reliable nesting."""
         child = SpanContext(
             name=name,
             enabled=self.enabled,
             metadata=metadata,
             input=input,
+            _trace_context=self._get_child_trace_context(),
         )
         try:
             child.start()
@@ -293,7 +365,7 @@ class SpanContext:
         metadata: Optional[dict] = None,
         model_parameters: Optional[dict] = None,
     ) -> Generator["GenerationContext", None, None]:
-        """Create a generation within this span - nesting handled by OTEL."""
+        """Create a generation within this span with explicit trace context."""
         gen_ctx = GenerationContext(
             name=name,
             model=model,
@@ -301,6 +373,7 @@ class SpanContext:
             input=input,
             metadata=metadata,
             model_parameters=model_parameters,
+            _trace_context=self._get_child_trace_context(),
         )
         try:
             gen_ctx.start()
@@ -325,6 +398,7 @@ class GenerationContext:
     _output: Optional[str] = field(default=None, repr=False)
     _usage: Optional[dict] = field(default=None, repr=False)
     _status: str = field(default="success", repr=False)
+    _trace_context: Optional[Any] = field(default=None, repr=False)
 
     def start(self) -> None:
         """Start the generation using v3 API."""
@@ -338,9 +412,10 @@ class GenerationContext:
         try:
             self._start_time = time.time()
 
-            # Create generation using v3 API
+            # Create generation using v3 API with explicit trace_context for reliable nesting
             # start_as_current_observation returns a context manager
             self._context_manager = client.client.start_as_current_observation(
+                trace_context=self._trace_context,
                 as_type="generation",
                 name=self.name,
                 model=self.model,
