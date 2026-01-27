@@ -75,6 +75,11 @@ def create_dspy_tool(
 
     def tool_func(**kwargs) -> str:
         """Execute the tool and return formatted result."""
+        # Check for malformed JSON input (DSPy sets "raw" key when parsing fails)
+        if "raw" in kwargs:
+            expected_params = ", ".join(parameters.keys())
+            return f"Error: Invalid input format. Expected JSON with parameters: {expected_params}"
+
         if tracing_context:
             with tracing_context.span(
                 name=f"tool:{name}",
@@ -94,7 +99,11 @@ def create_dspy_tool(
                 except Exception as e:
                     logger.error(f"Tool execution failed: {name} - {e}")
                     span.set_status("error")
-                    return f"Tool execution error: {e}"
+                    # Return clean error message without full stack trace
+                    error_msg = str(e)
+                    if len(error_msg) > 500:
+                        error_msg = error_msg[:500] + "..."
+                    return f"Tool '{name}' execution error: {error_msg}"
         else:
             # Original logic without tracing
             try:
@@ -103,7 +112,11 @@ def create_dspy_tool(
                 return formatted
             except Exception as e:
                 logger.error(f"Tool execution failed: {name} - {e}")
-                return f"Tool execution error: {e}"
+                # Return clean error message without full stack trace
+                error_msg = str(e)
+                if len(error_msg) > 500:
+                    error_msg = error_msg[:500] + "..."
+                return f"Tool '{name}' execution error: {error_msg}"
 
     # Set function metadata for DSPy
     tool_func.__name__ = name
@@ -139,6 +152,7 @@ def create_delegate_tool(
     tool_name: str,
     delegates_config: DelegatesConfiguration,
     tracing_context: Optional[TracingContext] = None,
+    parameters: Optional[dict[str, str]] = None,
 ) -> Callable:
     """
     Create a DSPy-compatible tool function for a delegate LLM.
@@ -150,22 +164,33 @@ def create_delegate_tool(
         tool_name: Tool name (e.g., "ask_reasoner")
         delegates_config: Delegates configuration
         tracing_context: Optional tracing context for observability
+        parameters: Dict mapping parameter names to descriptions. Defaults to
+            {"query": "the question or task to delegate"}
 
     Returns:
-        DSPy-compatible tool function
+        DSPy-compatible tool function with explicit parameter signature
     """
     from ...tools.llm_delegate import call_delegate, format_result_for_llm
 
     delegate = delegates_config.delegates[role]
 
-    def delegate_tool(
-        prompt: str,
-        temperature: Optional[float] = None,
-        max_tokens: Optional[int] = None,
-    ) -> str:
+    # Default parameters for delegate tools
+    if parameters is None:
+        parameters = {"query": "the question or task to delegate"}
+
+    def delegate_tool(**kwargs) -> str:
         """Delegate to specialized LLM."""
-        if not prompt or not prompt.strip():
-            return "Error: Prompt is empty. Please provide a prompt."
+        # Check for malformed JSON input (DSPy sets "raw" key when parsing fails)
+        if "raw" in kwargs and "query" not in kwargs:
+            return 'Error: Invalid input format. Expected JSON: {"query": "your question or task"}'
+
+        # Accept both 'query' and 'prompt' for compatibility
+        prompt = kwargs.get("query") or kwargs.get("prompt")
+        if not prompt or not str(prompt).strip():
+            return "Error: Query is empty. Please provide a query."
+
+        temperature = kwargs.get("temperature")
+        max_tokens = kwargs.get("max_tokens")
 
         temp = temperature if temperature is not None else delegate.defaults.temperature
         tokens = max_tokens if max_tokens is not None else delegate.defaults.max_tokens
@@ -212,6 +237,28 @@ def create_delegate_tool(
     delegate_tool.__doc__ = (
         f"{description} (Best for: {', '.join(delegate.capabilities.specializations)})"
     )
+
+    # Build explicit signature from parameters dict so DSPy sees named params
+    # instead of **kwargs. All params are optional with None default.
+    params = [
+        inspect.Parameter(
+            param_name,
+            inspect.Parameter.KEYWORD_ONLY,
+            default=None,
+            annotation=str,
+        )
+        for param_name in parameters.keys()
+    ]
+    delegate_tool.__signature__ = inspect.Signature(
+        parameters=params,
+        return_annotation=str,
+    )
+
+    # Add annotations dict for DSPy's get_type_hints()
+    delegate_tool.__annotations__ = {
+        param_name: str for param_name in parameters.keys()
+    }
+    delegate_tool.__annotations__["return"] = str
 
     return delegate_tool
 
