@@ -410,19 +410,26 @@ class ToolOrchestratorModule(dspy.Module):
             # Extract answer from result
             answer = result.answer if hasattr(result, "answer") else str(result)
 
+            # Extract tools used from steps (excluding "finish" action)
+            tools_used = [
+                step.action
+                for step in self.steps
+                if step.action and step.action != "finish"
+            ]
+
             # Log completion
             logger.info("Completed orchestration")
             self._log_trace_summary()
 
-            # Return dspy.Prediction for proper metric evaluation during optimization
-            return dspy.Prediction(answer=answer)
+            # Return dspy.Prediction with both answer and tools for metric evaluation
+            return dspy.Prediction(answer=answer, tools=tools_used)
 
         except Exception as e:
             logger.error(
                 f"Orchestration failed: {e} "
                 f"(endpoint={config.orchestrator.base_url}, model={config.orchestrator.model})"
             )
-            return dspy.Prediction(answer=f"Error during orchestration: {e}")
+            return dspy.Prediction(answer=f"Error during orchestration: {e}", tools=[])
         finally:
             # Always reset query context
             reset_current_query(query_token)
