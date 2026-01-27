@@ -40,7 +40,9 @@ def _estimate_messages_tokens(messages: list) -> int:
     for msg in messages:
         # Role token overhead (~4 tokens per message for role, formatting)
         total += 4
-        content = msg.get("content") if isinstance(msg, dict) else getattr(msg, "content", "")
+        content = (
+            msg.get("content") if isinstance(msg, dict) else getattr(msg, "content", "")
+        )
         if isinstance(content, str):
             total += _estimate_tokens(content)
         elif isinstance(content, list):
@@ -109,7 +111,9 @@ class TokenAwareLM(dspy.LM):
             )
 
         # Get requested max_tokens
-        requested = kwargs.get("max_tokens") or self._lm.kwargs.get("max_tokens", config.max_tokens)
+        requested = kwargs.get("max_tokens") or self._lm.kwargs.get(
+            "max_tokens", config.max_tokens
+        )
 
         # Clamp if needed
         if available < requested:
@@ -120,14 +124,41 @@ class TokenAwareLM(dspy.LM):
             )
             kwargs["max_tokens"] = adjusted
 
-        return self._lm.forward(prompt=prompt, messages=messages, **kwargs)
+        result = self._lm.forward(prompt=prompt, messages=messages, **kwargs)
+
+        # Ensure usage is preserved (handle caching side effects)
+        # DSPy's caching mechanism can replace the result with a cached version
+        # that has an empty usage dict. Try to recover from underlying LM history.
+        if hasattr(result, "usage"):
+            usage = result.usage
+            is_empty_usage = (
+                isinstance(usage, dict)
+                and not usage.get("prompt_tokens")
+                and not usage.get("completion_tokens")
+            )
+            if is_empty_usage and hasattr(self._lm, "history") and self._lm.history:
+                last_entry = self._lm.history[-1]
+                if hasattr(last_entry, "usage") and last_entry.usage:
+                    logger.debug("TokenAwareLM: Recovering usage from LM history")
+                    result.usage = last_entry.usage
+
+        return result
 
     def __getattr__(self, name: str) -> Any:
         return getattr(object.__getattribute__(self, "_lm"), name)
 
     def __setattr__(self, name: str, value: Any) -> None:
-        if name in ("_lm", "_context_length", "_min_output_tokens", "_safety_buffer",
-                    "model", "cache", "history", "callbacks", "kwargs"):
+        if name in (
+            "_lm",
+            "_context_length",
+            "_min_output_tokens",
+            "_safety_buffer",
+            "model",
+            "cache",
+            "history",
+            "callbacks",
+            "kwargs",
+        ):
             object.__setattr__(self, name, value)
         else:
             setattr(self._lm, name, value)
@@ -451,11 +482,30 @@ class TracedLM(dspy.LM):
             # Try to extract usage from result if available
             if hasattr(result, "usage"):
                 usage = result.usage
-                if hasattr(usage, "prompt_tokens"):
+                prompt_tokens = None
+                completion_tokens = None
+                total_tokens = None
+
+                if isinstance(usage, dict):
+                    # Handle dict-style usage (e.g., from cache or some providers)
+                    prompt_tokens = usage.get("prompt_tokens")
+                    completion_tokens = usage.get("completion_tokens")
+                    total_tokens = usage.get("total_tokens")
+                elif hasattr(usage, "prompt_tokens"):
+                    # Handle object-style usage (LiteLLM Usage class)
+                    prompt_tokens = getattr(usage, "prompt_tokens", None)
+                    completion_tokens = getattr(usage, "completion_tokens", None)
+                    total_tokens = getattr(usage, "total_tokens", None)
+
+                # Only set usage if we have at least one valid token count
+                if any(
+                    v is not None
+                    for v in [prompt_tokens, completion_tokens, total_tokens]
+                ):
                     gen.set_usage(
-                        prompt_tokens=getattr(usage, "prompt_tokens", None),
-                        completion_tokens=getattr(usage, "completion_tokens", None),
-                        total_tokens=getattr(usage, "total_tokens", None),
+                        prompt_tokens=prompt_tokens,
+                        completion_tokens=completion_tokens,
+                        total_tokens=total_tokens,
                     )
 
             return result

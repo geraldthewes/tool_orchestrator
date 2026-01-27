@@ -1244,6 +1244,119 @@ class TestToolSpanTracing:
         finally:
             shutdown_tracing()
 
+    def test_delegate_tool_accepts_query_parameter(self):
+        """Test create_delegate_tool accepts 'query' parameter (DSPy-compatible)."""
+        from src.prompts.modules.orchestrator import create_delegate_tool
+        from src.models import (
+            DelegateConfig,
+            DelegateConnection,
+            DelegateCapabilities,
+            DelegateDefaults,
+            ConnectionType,
+            DelegatesConfiguration,
+        )
+
+        config = DelegateConfig(
+            role="test",
+            display_name="Test LLM",
+            description="Test delegate",
+            connection=DelegateConnection(
+                type=ConnectionType.OPENAI_COMPATIBLE,
+                base_url="http://test:8000/v1",
+                model="test-model",
+            ),
+            capabilities=DelegateCapabilities(
+                context_length=4096,
+                max_output_tokens=2048,
+                specializations=["testing"],
+            ),
+            defaults=DelegateDefaults(
+                temperature=0.7,
+                max_tokens=1024,
+            ),
+        )
+
+        delegates_config = DelegatesConfiguration(
+            version="1.0",
+            delegates={"test": config},
+        )
+
+        with patch("src.tools.llm_delegate.call_delegate") as mock_call:
+            mock_call.return_value = {
+                "success": True,
+                "response": "Query response",
+                "model": "test-model",
+            }
+
+            tool = create_delegate_tool(
+                role="test",
+                display_name="Test LLM",
+                description="Test delegate",
+                tool_name="ask_test",
+                delegates_config=delegates_config,
+            )
+
+            # Test using 'query' parameter (new preferred way)
+            result = tool(query="Test query")
+            assert "Query response" in result
+            mock_call.assert_called_once()
+
+    def test_delegate_tool_signature_has_query_parameter(self):
+        """Test create_delegate_tool has explicit signature with 'query' parameter."""
+        import inspect
+        from src.prompts.modules.orchestrator import create_delegate_tool
+        from src.models import (
+            DelegateConfig,
+            DelegateConnection,
+            DelegateCapabilities,
+            DelegateDefaults,
+            ConnectionType,
+            DelegatesConfiguration,
+        )
+
+        config = DelegateConfig(
+            role="test",
+            display_name="Test LLM",
+            description="Test delegate",
+            connection=DelegateConnection(
+                type=ConnectionType.OPENAI_COMPATIBLE,
+                base_url="http://test:8000/v1",
+                model="test-model",
+            ),
+            capabilities=DelegateCapabilities(
+                context_length=4096,
+                max_output_tokens=2048,
+                specializations=["testing"],
+            ),
+            defaults=DelegateDefaults(
+                temperature=0.7,
+                max_tokens=1024,
+            ),
+        )
+
+        delegates_config = DelegatesConfiguration(
+            version="1.0",
+            delegates={"test": config},
+        )
+
+        tool = create_delegate_tool(
+            role="test",
+            display_name="Test LLM",
+            description="Test delegate",
+            tool_name="ask_test",
+            delegates_config=delegates_config,
+        )
+
+        # Verify signature has 'query' parameter
+        sig = inspect.signature(tool)
+        assert "query" in sig.parameters
+        assert sig.parameters["query"].annotation is str
+
+        # Verify annotations
+        assert "query" in tool.__annotations__
+        assert tool.__annotations__["query"] is str
+        assert tool.__annotations__["return"] is str
+
     def test_tool_tracing_graceful_degradation_disabled_context(self):
         """Test tool tracing gracefully degrades with disabled context."""
         from src.prompts.modules.orchestrator import create_dspy_tool
@@ -1331,6 +1444,214 @@ class TestOrchestratorTracingWithSpanContextParent:
 
         result = tool(expression="2 + 2")
         assert "4" in result
+
+
+class TestTracedLMTokenExtraction:
+    """Tests for TracedLM token usage extraction."""
+
+    @patch("src.tracing.client.Langfuse")
+    def test_traced_lm_captures_dict_usage(self, mock_langfuse_class):
+        """Test TracedLM extracts token counts from dict-style usage."""
+        from src.prompts.adapters.lm_factory import TracedLM
+        from src.tracing import TracingContext
+        from src.tracing.client import init_tracing_client, shutdown_tracing
+
+        mock_instance = MagicMock()
+        mock_context_manager = MagicMock()
+        mock_generation = MagicMock()
+        mock_context_manager.__enter__ = MagicMock(return_value=mock_generation)
+        mock_context_manager.__exit__ = MagicMock(return_value=None)
+        mock_instance.start_as_current_observation.return_value = mock_context_manager
+        mock_instance.auth_check.return_value = True
+        mock_langfuse_class.return_value = mock_instance
+
+        try:
+            init_tracing_client(public_key="pk-test", secret_key="sk-test")
+
+            mock_lm = MagicMock()
+            mock_lm.model = "test-model"
+            mock_lm.cache = False
+            mock_lm.history = []
+            mock_lm.callbacks = []
+            mock_lm.kwargs = {}
+
+            # Create result with dict-style usage
+            mock_result = MagicMock()
+            mock_result.usage = {
+                "prompt_tokens": 100,
+                "completion_tokens": 50,
+                "total_tokens": 150,
+            }
+            mock_lm.forward.return_value = mock_result
+
+            ctx = TracingContext(execution_id="test-123")
+            traced = TracedLM(mock_lm, ctx, "orchestrator")
+
+            traced.forward(prompt="test prompt")
+
+            # Verify generation.update was called with usage
+            mock_generation.update.assert_called()
+            update_kwargs = mock_generation.update.call_args[1]
+            assert "usage" in update_kwargs
+            assert update_kwargs["usage"]["promptTokens"] == 100
+            assert update_kwargs["usage"]["completionTokens"] == 50
+            assert update_kwargs["usage"]["totalTokens"] == 150
+        finally:
+            shutdown_tracing()
+
+    @patch("src.tracing.client.Langfuse")
+    def test_traced_lm_captures_object_usage(self, mock_langfuse_class):
+        """Test TracedLM extracts token counts from object-style usage (LiteLLM)."""
+        from src.prompts.adapters.lm_factory import TracedLM
+        from src.tracing import TracingContext
+        from src.tracing.client import init_tracing_client, shutdown_tracing
+
+        mock_instance = MagicMock()
+        mock_context_manager = MagicMock()
+        mock_generation = MagicMock()
+        mock_context_manager.__enter__ = MagicMock(return_value=mock_generation)
+        mock_context_manager.__exit__ = MagicMock(return_value=None)
+        mock_instance.start_as_current_observation.return_value = mock_context_manager
+        mock_instance.auth_check.return_value = True
+        mock_langfuse_class.return_value = mock_instance
+
+        try:
+            init_tracing_client(public_key="pk-test", secret_key="sk-test")
+
+            mock_lm = MagicMock()
+            mock_lm.model = "test-model"
+            mock_lm.cache = False
+            mock_lm.history = []
+            mock_lm.callbacks = []
+            mock_lm.kwargs = {}
+
+            # Create result with object-style usage (like LiteLLM Usage class)
+            mock_result = MagicMock()
+            mock_usage = MagicMock()
+            mock_usage.prompt_tokens = 200
+            mock_usage.completion_tokens = 100
+            mock_usage.total_tokens = 300
+            mock_result.usage = mock_usage
+            mock_lm.forward.return_value = mock_result
+
+            ctx = TracingContext(execution_id="test-123")
+            traced = TracedLM(mock_lm, ctx, "orchestrator")
+
+            traced.forward(prompt="test prompt")
+
+            # Verify generation.update was called with usage
+            mock_generation.update.assert_called()
+            update_kwargs = mock_generation.update.call_args[1]
+            assert "usage" in update_kwargs
+            assert update_kwargs["usage"]["promptTokens"] == 200
+            assert update_kwargs["usage"]["completionTokens"] == 100
+            assert update_kwargs["usage"]["totalTokens"] == 300
+        finally:
+            shutdown_tracing()
+
+    @patch("src.tracing.client.Langfuse")
+    def test_traced_lm_skips_empty_usage(self, mock_langfuse_class):
+        """Test TracedLM doesn't set usage when all values are None."""
+        from src.prompts.adapters.lm_factory import TracedLM
+        from src.tracing import TracingContext
+        from src.tracing.client import init_tracing_client, shutdown_tracing
+
+        mock_instance = MagicMock()
+        mock_context_manager = MagicMock()
+        mock_generation = MagicMock()
+        mock_context_manager.__enter__ = MagicMock(return_value=mock_generation)
+        mock_context_manager.__exit__ = MagicMock(return_value=None)
+        mock_instance.start_as_current_observation.return_value = mock_context_manager
+        mock_instance.auth_check.return_value = True
+        mock_langfuse_class.return_value = mock_instance
+
+        try:
+            init_tracing_client(public_key="pk-test", secret_key="sk-test")
+
+            mock_lm = MagicMock()
+            mock_lm.model = "test-model"
+            mock_lm.cache = False
+            mock_lm.history = []
+            mock_lm.callbacks = []
+            mock_lm.kwargs = {}
+
+            # Create result with empty dict usage
+            mock_result = MagicMock()
+            mock_result.usage = {}
+            mock_lm.forward.return_value = mock_result
+
+            ctx = TracingContext(execution_id="test-123")
+            traced = TracedLM(mock_lm, ctx, "orchestrator")
+
+            traced.forward(prompt="test prompt")
+
+            # Verify generation.update was called but without usage
+            mock_generation.update.assert_called()
+            update_kwargs = mock_generation.update.call_args[1]
+            # Usage should not be set when all values are None
+            assert "usage" not in update_kwargs or update_kwargs.get("usage") is None
+        finally:
+            shutdown_tracing()
+
+
+class TestTokenAwareLMUsagePassthrough:
+    """Tests for TokenAwareLM usage data passthrough."""
+
+    def test_token_aware_lm_preserves_usage(self):
+        """Test TokenAwareLM preserves usage from underlying LM result."""
+        from src.prompts.adapters.lm_factory import TokenAwareLM
+
+        mock_lm = MagicMock()
+        mock_lm.model = "test-model"
+        mock_lm.cache = False
+        mock_lm.history = []
+        mock_lm.callbacks = []
+        mock_lm.kwargs = {"max_tokens": 1000}
+
+        # Create result with usage
+        mock_result = MagicMock()
+        mock_result.usage = {
+            "prompt_tokens": 50,
+            "completion_tokens": 25,
+            "total_tokens": 75,
+        }
+        mock_lm.forward.return_value = mock_result
+
+        wrapper = TokenAwareLM(mock_lm, context_length=4096)
+        result = wrapper.forward(prompt="test")
+
+        assert result.usage["prompt_tokens"] == 50
+        assert result.usage["completion_tokens"] == 25
+
+    def test_token_aware_lm_recovers_usage_from_history(self):
+        """Test TokenAwareLM recovers usage from LM history when result has empty usage."""
+        from src.prompts.adapters.lm_factory import TokenAwareLM
+
+        mock_lm = MagicMock()
+        mock_lm.model = "test-model"
+        mock_lm.cache = False
+        mock_lm.callbacks = []
+        mock_lm.kwargs = {"max_tokens": 1000}
+
+        # Create history entry with valid usage
+        history_entry = MagicMock()
+        history_entry.usage = {
+            "prompt_tokens": 100,
+            "completion_tokens": 50,
+            "total_tokens": 150,
+        }
+        mock_lm.history = [history_entry]
+
+        # Create result with empty usage (simulates caching issue)
+        mock_result = MagicMock()
+        mock_result.usage = {}
+        mock_lm.forward.return_value = mock_result
+
+        wrapper = TokenAwareLM(mock_lm, context_length=4096)
+        result = wrapper.forward(prompt="test")
+
+        # Usage should be recovered from history
+        assert result.usage == history_entry.usage
 
 
 class TestConnectivityValidation:
