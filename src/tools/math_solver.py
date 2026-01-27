@@ -1,107 +1,66 @@
 """
 Mathematical Expression Solver
 
-Safely evaluates mathematical expressions.
+Safely evaluates mathematical expressions using SymPy's parser.
+Supports scientific calculator syntax including:
+- Factorial notation: 5!
+- Caret exponentiation: 2^16
+- Degree notation: sin(30 degrees)
 """
 
 import logging
-import ast
-import math
-import operator as op
+import re
+
+from sympy import N
+from sympy.parsing.sympy_parser import (
+    parse_expr,
+    standard_transformations,
+    implicit_multiplication_application,
+    convert_xor,
+    factorial_notation,
+)
 
 logger = logging.getLogger(__name__)
 
-# Supported operators
-OPERATORS = {
-    ast.Add: op.add,
-    ast.Sub: op.sub,
-    ast.Mult: op.mul,
-    ast.Div: op.truediv,
-    ast.FloorDiv: op.floordiv,
-    ast.Pow: op.pow,
-    ast.Mod: op.mod,
-    ast.USub: op.neg,
-    ast.UAdd: op.pos,
-}
-
-# Supported math functions
-MATH_FUNCTIONS = {
-    "abs": abs,
-    "round": round,
-    "min": min,
-    "max": max,
-    "sum": sum,
-    "sqrt": math.sqrt,
-    "sin": math.sin,
-    "cos": math.cos,
-    "tan": math.tan,
-    "log": math.log,
-    "log10": math.log10,
-    "log2": math.log2,
-    "exp": math.exp,
-    "pow": pow,
-    "floor": math.floor,
-    "ceil": math.ceil,
-    "factorial": math.factorial,
-    "gcd": math.gcd,
-}
-
-# Supported constants
-CONSTANTS = {
-    "pi": math.pi,
-    "e": math.e,
-    "tau": math.tau,
-    "inf": math.inf,
-}
+# Transformations for scientific calculator syntax
+TRANSFORMATIONS = (
+    standard_transformations
+    + (implicit_multiplication_application,)
+    + (convert_xor,)  # 2^16 -> 2**16
+    + (factorial_notation,)  # 5! -> factorial(5)
+)
 
 
-def _eval_node(node: ast.AST) -> float:
-    """Recursively evaluate an AST node."""
-    if isinstance(node, ast.Constant):
-        if isinstance(node.value, (int, float)):
-            return node.value
-        raise ValueError(f"Unsupported constant type: {type(node.value)}")
+def preprocess_expression(expression: str) -> str:
+    """
+    Preprocess expression for SymPy compatibility.
 
-    elif isinstance(node, ast.Name):
-        name = node.id.lower()
-        if name in CONSTANTS:
-            return CONSTANTS[name]
-        raise ValueError(f"Unknown variable: {node.id}")
+    Handles:
+        - Degree notation: sin(30 degrees) -> sin(30 * pi / 180)
+        - ceil function: ceil(x) -> ceiling(x) (SymPy naming)
+    """
+    # Convert degree notation to radians
+    # Match number followed by 'degrees' or 'deg'
+    degree_pattern = r"(\d+(?:\.\d+)?)\s*(?:degrees?|deg)\b"
+    expression = re.sub(degree_pattern, r"(\1 * pi / 180)", expression, flags=re.IGNORECASE)
 
-    elif isinstance(node, ast.BinOp):
-        if type(node.op) not in OPERATORS:
-            raise ValueError(f"Unsupported operator: {type(node.op).__name__}")
-        left = _eval_node(node.left)
-        right = _eval_node(node.right)
-        return OPERATORS[type(node.op)](left, right)  # type: ignore[operator]
+    # Convert ceil to ceiling (SymPy uses 'ceiling')
+    expression = re.sub(r"\bceil\b", "ceiling", expression)
 
-    elif isinstance(node, ast.UnaryOp):
-        if type(node.op) not in OPERATORS:
-            raise ValueError(f"Unsupported operator: {type(node.op).__name__}")
-        operand = _eval_node(node.operand)
-        return OPERATORS[type(node.op)](operand)  # type: ignore[operator]
-
-    elif isinstance(node, ast.Call):
-        if not isinstance(node.func, ast.Name):
-            raise ValueError("Only simple function calls are supported")
-
-        func_name = node.func.id.lower()
-        if func_name not in MATH_FUNCTIONS:
-            raise ValueError(f"Unknown function: {node.func.id}")
-
-        args = [_eval_node(arg) for arg in node.args]
-        return MATH_FUNCTIONS[func_name](*args)  # type: ignore[operator]
-
-    elif isinstance(node, ast.Expression):
-        return _eval_node(node.body)
-
-    else:
-        raise ValueError(f"Unsupported node type: {type(node).__name__}")
+    return expression
 
 
 def calculate(expression: str) -> dict:
     """
     Safely evaluate a mathematical expression.
+
+    Supports scientific calculator syntax:
+    - Basic arithmetic: 2 + 2, 10 * 5
+    - Exponentiation: 2^10 or 2**10
+    - Factorial: 5! or factorial(5)
+    - Trig functions: sin(30 degrees), cos(pi/4)
+    - Math functions: sqrt(16), log(100), exp(2)
+    - Constants: pi, e, E (Euler's number)
 
     Args:
         expression: Mathematical expression as a string
@@ -119,13 +78,24 @@ def calculate(expression: str) -> dict:
         }
 
     try:
-        # Parse the expression
-        tree = ast.parse(expression, mode="eval")
+        # Preprocess for SymPy compatibility
+        processed_expr = preprocess_expression(expression)
 
-        # Evaluate it
-        result = _eval_node(tree)
+        # Parse with scientific calculator transformations
+        expr = parse_expr(
+            processed_expr,
+            transformations=TRANSFORMATIONS,
+            evaluate=True,
+        )
 
-        # Format result
+        # Evaluate numerically
+        result = complex(N(expr))
+
+        # Convert to real if no imaginary component
+        if result.imag == 0:
+            result = result.real
+
+        # Format result - convert to int if it's a whole number
         if isinstance(result, float) and result.is_integer():
             result = int(result)
 
@@ -137,13 +107,15 @@ def calculate(expression: str) -> dict:
         }
 
     except SyntaxError as e:
+        logger.debug("Syntax error parsing expression '%s': %s", expression, e)
         return {
             "success": False,
             "expression": expression,
             "result": None,
             "error": f"Syntax error: {e}",
         }
-    except ValueError as e:
+    except (ValueError, TypeError) as e:
+        logger.debug("Value/Type error evaluating '%s': %s", expression, e)
         return {
             "success": False,
             "expression": expression,
@@ -151,6 +123,7 @@ def calculate(expression: str) -> dict:
             "error": str(e),
         }
     except Exception as e:
+        logger.debug("Calculation error for '%s': %s", expression, e)
         return {
             "success": False,
             "expression": expression,

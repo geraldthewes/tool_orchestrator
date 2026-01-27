@@ -92,7 +92,7 @@ class TestMathSolver:
         """Test handling of unknown functions."""
         result = calculate("unknown_func(5)")
         assert result["success"] is False
-        assert "Unknown function" in result["error"]
+        assert result["error"] is not None  # SymPy returns "Cannot convert expression to float"
 
     def test_format_success(self):
         """Test formatting successful result."""
@@ -105,6 +105,48 @@ class TestMathSolver:
         result = calculate("invalid")
         formatted = format_math_result(result)
         assert "failed" in formatted.lower()
+
+    def test_factorial_notation(self):
+        """Test factorial with ! notation."""
+        result = calculate("5!")
+        assert result["success"] is True
+        assert result["result"] == 120
+
+    def test_caret_exponent(self):
+        """Test exponentiation with ^ notation."""
+        result = calculate("2^10")
+        assert result["success"] is True
+        assert result["result"] == 1024
+
+    def test_degrees_trig_sin(self):
+        """Test trig functions with degrees."""
+        result = calculate("sin(30 degrees)")
+        assert result["success"] is True
+        assert abs(result["result"] - 0.5) < 0.0001
+
+    def test_degrees_trig_cos(self):
+        """Test cosine with degrees."""
+        result = calculate("cos(60 degrees)")
+        assert result["success"] is True
+        assert abs(result["result"] - 0.5) < 0.0001
+
+    def test_degrees_short_notation(self):
+        """Test trig with short 'deg' notation."""
+        result = calculate("tan(45 deg)")
+        assert result["success"] is True
+        assert abs(result["result"] - 1.0) < 0.0001
+
+    def test_large_factorial(self):
+        """Test larger factorial value."""
+        result = calculate("10!")
+        assert result["success"] is True
+        assert result["result"] == 3628800
+
+    def test_combined_notation(self):
+        """Test combining factorial and caret."""
+        result = calculate("2^3 + 4!")
+        assert result["success"] is True
+        assert result["result"] == 32  # 8 + 24
 
 
 class TestPythonExecutor:
