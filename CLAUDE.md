@@ -157,3 +157,55 @@ dspy:
 ## Testing
 
 Tests use mocked LLM responses to test orchestration logic without external services. Tool tests (math solver, Python executor) run locally without mocks.
+
+## Observability with Langfuse
+
+Langfuse integration provides tracing for LLM calls, tool executions, and orchestration steps.
+
+### Analyzing Traces
+
+Use `scripts/analyze_langfuse_traces.py` to diagnose optimization performance and debug issues:
+
+```bash
+# Basic analysis of recent DSPy optimization traces
+python scripts/analyze_langfuse_traces.py --limit 50
+
+# Verbose output with failure details
+python scripts/analyze_langfuse_traces.py --limit 100 --verbose
+
+# Analyze all traces (not just dspy_optimization)
+python scripts/analyze_langfuse_traces.py --all-traces --limit 50
+
+# Filter by timestamp
+python scripts/analyze_langfuse_traces.py --since 2024-01-15T00:00:00
+
+# Export detailed report to JSON
+python scripts/analyze_langfuse_traces.py --output report.json
+```
+
+**What the script analyzes:**
+- Error rates for LLM generations and tool calls
+- Tool usage distribution (which tools are called most)
+- Latency statistics (avg, p50, p95, max) for generations and tools
+- Token usage (prompt and completion tokens)
+- Detailed failure extraction with input/output context
+
+**Note:** Scores (e.g., `orchestration_quality_with_tools`) are computed locally by DSPy metric functions and NOT stored in Langfuse. The script analyzes execution quality proxies instead.
+
+### Key Tracing Components
+
+- **`src/tracing/client.py`**: Langfuse client wrapper with graceful degradation
+- **`src/tracing/context.py`**: `TracingContext`, `SpanContext`, `GenerationContext` for structured traces
+- **`src/prompts/adapters/lm_factory.py`**: `TracedLM` wrapper adds tracing to DSPy LM calls
+
+## Scripts
+
+Utility scripts in `scripts/`:
+
+| Script | Purpose |
+|--------|---------|
+| `optimize_prompts.py` | Run DSPy optimization on orchestrator prompts |
+| `analyze_langfuse_traces.py` | Analyze Langfuse traces for debugging and diagnostics |
+| `generate_examples.py` | Generate training examples for DSPy optimization |
+| `expand_examples.py` | Expand existing examples with variations |
+| `validate_examples.py` | Validate example format and quality |
