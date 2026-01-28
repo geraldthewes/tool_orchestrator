@@ -20,7 +20,7 @@ import json
 import logging
 import sys
 from collections import defaultdict
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -82,6 +82,9 @@ def fetch_traces(
         # Filter by timestamp if specified
         if since:
             since_dt = datetime.fromisoformat(since.replace("Z", "+00:00"))
+            # Ensure timezone-aware for comparison with Langfuse timestamps
+            if since_dt.tzinfo is None:
+                since_dt = since_dt.replace(tzinfo=timezone.utc)
             traces_data = [
                 t for t in traces.data if t.timestamp and t.timestamp >= since_dt
             ]
