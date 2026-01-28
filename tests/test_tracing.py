@@ -310,164 +310,69 @@ class TestLangfuseConfig:
 
 
 class TestOrchestratorTracingIntegration:
-    """Tests for orchestrator tracing integration."""
+    """Tests for orchestrator tracing integration with the new loop."""
 
-    @patch("src.prompts.modules.orchestrator.get_orchestrator_lm")
-    @patch("src.prompts.modules.orchestrator.dspy.context")
-    def test_orchestrator_without_tracing_context(self, mock_context, mock_get_lm):
+    @patch("src.orchestration.loop.OpenAI")
+    def test_orchestrator_without_tracing_context(self, mock_openai_cls):
         """Test orchestrator works without tracing context."""
+        import json
+
         from src.orchestrator import ToolOrchestrator
 
-        mock_lm = MagicMock()
-        mock_get_lm.return_value = mock_lm
-        mock_context.return_value.__enter__ = MagicMock()
-        mock_context.return_value.__exit__ = MagicMock(return_value=False)
+        mock_client = Mock()
+        mock_openai_cls.return_value = mock_client
 
-        orchestrator = ToolOrchestrator(
-            tracing_context=None,
-        )
+        # Return an answer tool call
+        tc = Mock()
+        tc.function = Mock()
+        tc.function.name = "answer"
+        tc.function.arguments = json.dumps({"content": "The answer is 42."})
 
-        # Mock the react module to return a final answer
-        mock_result = Mock()
-        mock_result.answer = "The answer is 42."
-        orchestrator._module.react = Mock(return_value=mock_result)
+        msg = Mock()
+        msg.content = ""
+        msg.tool_calls = [tc]
 
+        response = Mock()
+        response.choices = [Mock(message=msg)]
+        response.usage = None
+        mock_client.chat.completions.create.return_value = response
+
+        orchestrator = ToolOrchestrator(tracing_context=None)
         result = orchestrator.run("What is the answer?")
         assert "42" in result
 
-    @patch("src.prompts.modules.orchestrator.get_orchestrator_lm")
-    @patch("src.prompts.modules.orchestrator.dspy.context")
-    def test_orchestrator_with_tracing_context_disabled(
-        self, mock_context, mock_get_lm
-    ):
+    @patch("src.orchestration.loop.OpenAI")
+    def test_orchestrator_with_tracing_context_disabled(self, mock_openai_cls):
         """Test orchestrator works with disabled tracing context."""
+        import json
+
         from src.orchestrator import ToolOrchestrator
         from src.tracing import TracingContext
         from src.tracing.client import shutdown_tracing
 
-        # Ensure tracing is disabled
         shutdown_tracing()
 
-        mock_lm = MagicMock()
-        mock_get_lm.return_value = mock_lm
-        mock_context.return_value.__enter__ = MagicMock()
-        mock_context.return_value.__exit__ = MagicMock(return_value=False)
+        mock_client = Mock()
+        mock_openai_cls.return_value = mock_client
+
+        tc = Mock()
+        tc.function = Mock()
+        tc.function.name = "answer"
+        tc.function.arguments = json.dumps({"content": "Done."})
+
+        msg = Mock()
+        msg.content = ""
+        msg.tool_calls = [tc]
+
+        response = Mock()
+        response.choices = [Mock(message=msg)]
+        response.usage = None
+        mock_client.chat.completions.create.return_value = response
 
         tracing_ctx = TracingContext(execution_id="test-123")
-
-        orchestrator = ToolOrchestrator(
-            tracing_context=tracing_ctx,
-        )
-
-        # Mock the react module
-        mock_result = Mock()
-        mock_result.answer = "Done."
-        orchestrator._module.react = Mock(return_value=mock_result)
-
+        orchestrator = ToolOrchestrator(tracing_context=tracing_ctx)
         result = orchestrator.run("Test query")
         assert "Done" in result
-
-    def test_traced_delegate_call_without_context(self):
-        """Test delegate tools work without tracing context.
-
-        Note: The DSPy implementation handles delegates through tool adapters,
-        so we test through the create_delegate_tool function.
-        """
-        from src.prompts.modules.orchestrator import create_delegate_tool
-        from src.models import (
-            DelegateConfig,
-            DelegateConnection,
-            DelegateCapabilities,
-            DelegateDefaults,
-            ConnectionType,
-            DelegatesConfiguration,
-        )
-
-        config = DelegateConfig(
-            role="test",
-            display_name="Test LLM",
-            description="Test delegate",
-            connection=DelegateConnection(
-                type=ConnectionType.OPENAI_COMPATIBLE,
-                base_url="http://test:8000/v1",
-                model="test-model",
-            ),
-            capabilities=DelegateCapabilities(
-                context_length=4096,
-                max_output_tokens=2048,
-                specializations=["testing"],
-            ),
-            defaults=DelegateDefaults(
-                temperature=0.7,
-                max_tokens=1024,
-            ),
-        )
-
-        delegates_config = DelegatesConfiguration(
-            version="1.0",
-            delegates={"test": config},
-        )
-
-        with patch("src.tools.llm_delegate.call_delegate") as mock_call:
-            mock_call.return_value = {
-                "success": True,
-                "response": "Delegate response",
-                "model": "test-model",
-            }
-
-            tool = create_delegate_tool(
-                role="test",
-                display_name="Test LLM",
-                description="Test delegate",
-                tool_name="ask_test",
-                delegates_config=delegates_config,
-            )
-
-            result = tool(prompt="Test prompt")
-            assert "Delegate response" in result
-            mock_call.assert_called_once()
-
-    @patch("src.prompts.modules.orchestrator.get_orchestrator_lm")
-    @patch("src.prompts.modules.orchestrator.dspy.context")
-    def test_traced_orchestrator_call_without_context(self, mock_context, mock_get_lm):
-        """Test orchestrator call works without tracing context."""
-        from src.orchestrator import ToolOrchestrator
-
-        mock_lm = MagicMock()
-        mock_get_lm.return_value = mock_lm
-        mock_context.return_value.__enter__ = MagicMock()
-        mock_context.return_value.__exit__ = MagicMock(return_value=False)
-
-        orchestrator = ToolOrchestrator(
-            tracing_context=None,
-        )
-
-        mock_result = Mock()
-        mock_result.answer = "Test response"
-        orchestrator._module.react = Mock(return_value=mock_result)
-
-        result = orchestrator.run("test")
-        assert "Test response" in result
-
-    def test_traced_tool_execution_without_context(self):
-        """Test tool execution works without tracing context.
-
-        Note: With DSPy, tools are executed through DSPy's ReAct module,
-        so we test the tool adapter directly.
-        """
-        from src.prompts.modules.orchestrator import create_dspy_tool
-        from src.tools.math_solver import _handle_calculate, format_result_for_llm
-
-        tool = create_dspy_tool(
-            name="calculate",
-            description="Calculate math",
-            parameters={"expression": "math expression"},
-            handler=_handle_calculate,
-            formatter=format_result_for_llm,
-        )
-
-        result = tool(expression="2 + 2")
-        assert "4" in result
 
 
 class TestTracingWithMockedLangfuse:
@@ -1085,365 +990,6 @@ class TestTracedLM:
             mock_generation.update.assert_called()
         finally:
             shutdown_tracing()
-
-
-class TestToolSpanTracing:
-    """Tests for tool execution span tracing."""
-
-    @patch("src.tracing.client.Langfuse")
-    def test_dspy_tool_creates_span_with_tracing(self, mock_langfuse_class):
-        """Test create_dspy_tool creates spans when tracing enabled."""
-        from src.prompts.modules.orchestrator import create_dspy_tool
-        from src.tracing import TracingContext
-        from src.tracing.client import init_tracing_client, shutdown_tracing
-
-        mock_instance = MagicMock()
-        mock_context_manager = MagicMock()
-        mock_span = MagicMock()
-        mock_context_manager.__enter__ = MagicMock(return_value=mock_span)
-        mock_context_manager.__exit__ = MagicMock(return_value=None)
-        mock_instance.start_as_current_observation.return_value = mock_context_manager
-        mock_instance.auth_check.return_value = True
-        mock_langfuse_class.return_value = mock_instance
-
-        try:
-            init_tracing_client(public_key="pk-test", secret_key="sk-test")
-
-            ctx = TracingContext(execution_id="test-123")
-
-            def test_handler(params):
-                return {"success": True, "result": params.get("value", 0) * 2}
-
-            def test_formatter(result):
-                return f"Result: {result['result']}"
-
-            tool = create_dspy_tool(
-                name="test_tool",
-                description="A test tool",
-                parameters={"value": "input value"},
-                handler=test_handler,
-                formatter=test_formatter,
-                tracing_context=ctx,
-            )
-
-            result = tool(value=5)
-
-            # Verify span was created
-            call_kwargs = mock_instance.start_as_current_observation.call_args[1]
-            assert call_kwargs["as_type"] == "span"
-            assert call_kwargs["name"] == "tool:test_tool"
-
-            # Verify output was set
-            mock_span.update.assert_called()
-            assert "10" in result
-        finally:
-            shutdown_tracing()
-
-    def test_dspy_tool_works_without_tracing(self):
-        """Test create_dspy_tool works when tracing_context is None."""
-        from src.prompts.modules.orchestrator import create_dspy_tool
-
-        def test_handler(params):
-            return {"success": True, "result": params.get("value", 0) * 2}
-
-        def test_formatter(result):
-            return f"Result: {result['result']}"
-
-        tool = create_dspy_tool(
-            name="test_tool",
-            description="A test tool",
-            parameters={"value": "input value"},
-            handler=test_handler,
-            formatter=test_formatter,
-            tracing_context=None,
-        )
-
-        result = tool(value=5)
-        assert "10" in result
-
-    @patch("src.tracing.client.Langfuse")
-    def test_delegate_tool_creates_span_with_tracing(self, mock_langfuse_class):
-        """Test create_delegate_tool creates spans when tracing enabled."""
-        from src.prompts.modules.orchestrator import create_delegate_tool
-        from src.tracing import TracingContext
-        from src.tracing.client import init_tracing_client, shutdown_tracing
-        from src.models import (
-            DelegateConfig,
-            DelegateConnection,
-            DelegateCapabilities,
-            DelegateDefaults,
-            ConnectionType,
-            DelegatesConfiguration,
-        )
-
-        mock_instance = MagicMock()
-        mock_context_manager = MagicMock()
-        mock_span = MagicMock()
-        mock_context_manager.__enter__ = MagicMock(return_value=mock_span)
-        mock_context_manager.__exit__ = MagicMock(return_value=None)
-        mock_instance.start_as_current_observation.return_value = mock_context_manager
-        mock_instance.auth_check.return_value = True
-        mock_langfuse_class.return_value = mock_instance
-
-        try:
-            init_tracing_client(public_key="pk-test", secret_key="sk-test")
-
-            ctx = TracingContext(execution_id="test-123")
-
-            config = DelegateConfig(
-                role="test",
-                display_name="Test LLM",
-                description="Test delegate",
-                connection=DelegateConnection(
-                    type=ConnectionType.OPENAI_COMPATIBLE,
-                    base_url="http://test:8000/v1",
-                    model="test-model",
-                ),
-                capabilities=DelegateCapabilities(
-                    context_length=4096,
-                    max_output_tokens=2048,
-                    specializations=["testing"],
-                ),
-                defaults=DelegateDefaults(
-                    temperature=0.7,
-                    max_tokens=1024,
-                ),
-            )
-
-            delegates_config = DelegatesConfiguration(
-                version="1.0",
-                delegates={"test": config},
-            )
-
-            with patch("src.tools.llm_delegate.call_delegate") as mock_call:
-                mock_call.return_value = {
-                    "success": True,
-                    "response": "Delegate response",
-                    "model": "test-model",
-                }
-
-                tool = create_delegate_tool(
-                    role="test",
-                    display_name="Test LLM",
-                    description="Test delegate",
-                    tool_name="ask_test",
-                    delegates_config=delegates_config,
-                    tracing_context=ctx,
-                )
-
-                result = tool(prompt="Test prompt")
-
-                # Verify span was created
-                call_kwargs = mock_instance.start_as_current_observation.call_args[1]
-                assert call_kwargs["as_type"] == "span"
-                assert call_kwargs["name"] == "tool:ask_test"
-
-                # Verify output was set
-                mock_span.update.assert_called()
-                assert "Delegate response" in result
-        finally:
-            shutdown_tracing()
-
-    def test_delegate_tool_accepts_query_parameter(self):
-        """Test create_delegate_tool accepts 'query' parameter (DSPy-compatible)."""
-        from src.prompts.modules.orchestrator import create_delegate_tool
-        from src.models import (
-            DelegateConfig,
-            DelegateConnection,
-            DelegateCapabilities,
-            DelegateDefaults,
-            ConnectionType,
-            DelegatesConfiguration,
-        )
-
-        config = DelegateConfig(
-            role="test",
-            display_name="Test LLM",
-            description="Test delegate",
-            connection=DelegateConnection(
-                type=ConnectionType.OPENAI_COMPATIBLE,
-                base_url="http://test:8000/v1",
-                model="test-model",
-            ),
-            capabilities=DelegateCapabilities(
-                context_length=4096,
-                max_output_tokens=2048,
-                specializations=["testing"],
-            ),
-            defaults=DelegateDefaults(
-                temperature=0.7,
-                max_tokens=1024,
-            ),
-        )
-
-        delegates_config = DelegatesConfiguration(
-            version="1.0",
-            delegates={"test": config},
-        )
-
-        with patch("src.tools.llm_delegate.call_delegate") as mock_call:
-            mock_call.return_value = {
-                "success": True,
-                "response": "Query response",
-                "model": "test-model",
-            }
-
-            tool = create_delegate_tool(
-                role="test",
-                display_name="Test LLM",
-                description="Test delegate",
-                tool_name="ask_test",
-                delegates_config=delegates_config,
-            )
-
-            # Test using 'query' parameter (new preferred way)
-            result = tool(query="Test query")
-            assert "Query response" in result
-            mock_call.assert_called_once()
-
-    def test_delegate_tool_signature_has_query_parameter(self):
-        """Test create_delegate_tool has explicit signature with 'query' parameter."""
-        import inspect
-        from src.prompts.modules.orchestrator import create_delegate_tool
-        from src.models import (
-            DelegateConfig,
-            DelegateConnection,
-            DelegateCapabilities,
-            DelegateDefaults,
-            ConnectionType,
-            DelegatesConfiguration,
-        )
-
-        config = DelegateConfig(
-            role="test",
-            display_name="Test LLM",
-            description="Test delegate",
-            connection=DelegateConnection(
-                type=ConnectionType.OPENAI_COMPATIBLE,
-                base_url="http://test:8000/v1",
-                model="test-model",
-            ),
-            capabilities=DelegateCapabilities(
-                context_length=4096,
-                max_output_tokens=2048,
-                specializations=["testing"],
-            ),
-            defaults=DelegateDefaults(
-                temperature=0.7,
-                max_tokens=1024,
-            ),
-        )
-
-        delegates_config = DelegatesConfiguration(
-            version="1.0",
-            delegates={"test": config},
-        )
-
-        tool = create_delegate_tool(
-            role="test",
-            display_name="Test LLM",
-            description="Test delegate",
-            tool_name="ask_test",
-            delegates_config=delegates_config,
-        )
-
-        # Verify signature has 'query' parameter
-        sig = inspect.signature(tool)
-        assert "query" in sig.parameters
-        assert sig.parameters["query"].annotation is str
-
-        # Verify annotations
-        assert "query" in tool.__annotations__
-        assert tool.__annotations__["query"] is str
-        assert tool.__annotations__["return"] is str
-
-    def test_tool_tracing_graceful_degradation_disabled_context(self):
-        """Test tool tracing gracefully degrades with disabled context."""
-        from src.prompts.modules.orchestrator import create_dspy_tool
-        from src.tracing import TracingContext
-        from src.tracing.client import shutdown_tracing
-
-        shutdown_tracing()
-
-        ctx = TracingContext(execution_id="test-123")
-        # Context is disabled (no tracing client)
-
-        def test_handler(params):
-            return {"value": params.get("x", 0) + 1}
-
-        def test_formatter(result):
-            return f"Value: {result['value']}"
-
-        tool = create_dspy_tool(
-            name="test_tool",
-            description="A test tool",
-            parameters={"x": "input value"},
-            handler=test_handler,
-            formatter=test_formatter,
-            tracing_context=ctx,
-        )
-
-        # Should work without errors
-        result = tool(x=5)
-        assert "6" in result
-
-    def test_tool_span_captures_error_status(self):
-        """Test tool span captures error status on handler failure."""
-        from src.prompts.modules.orchestrator import create_dspy_tool
-        from src.tracing import TracingContext
-        from src.tracing.client import shutdown_tracing
-
-        shutdown_tracing()
-
-        ctx = TracingContext(execution_id="test-123")
-
-        def failing_handler(params):
-            raise ValueError("Test error")
-
-        def test_formatter(result):
-            return str(result)
-
-        tool = create_dspy_tool(
-            name="test_tool",
-            description="A test tool",
-            parameters={"input": "any input"},
-            handler=failing_handler,
-            formatter=test_formatter,
-            tracing_context=ctx,
-        )
-
-        result = tool(value=1)
-        assert "error" in result.lower()
-
-
-class TestOrchestratorTracingWithSpanContextParent:
-    """Tests for orchestrator tracing with SpanContext as parent."""
-
-    def test_traced_tool_execution_with_span_context_parent(self):
-        """Test tool execution works with SpanContext.
-
-        Note: With DSPy, tools are executed through DSPy's ReAct module.
-        This test verifies tool adapters work correctly.
-        """
-        from src.prompts.modules.orchestrator import create_dspy_tool
-        from src.tools.math_solver import _handle_calculate, format_result_for_llm
-        from src.tracing.context import SpanContext
-
-        # Create a disabled SpanContext as parent (simulates nested span scenario)
-        parent_span = SpanContext(name="step_1", enabled=False)
-        parent_span.start()
-
-        # Tool adapter should work regardless of tracing context
-        tool = create_dspy_tool(
-            name="calculate",
-            description="Calculate math",
-            parameters={"expression": "math expression"},
-            handler=_handle_calculate,
-            formatter=format_result_for_llm,
-        )
-
-        result = tool(expression="2 + 2")
-        assert "4" in result
 
 
 class TestTracedLMTokenExtraction:

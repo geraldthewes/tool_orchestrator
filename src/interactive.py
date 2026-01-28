@@ -16,21 +16,20 @@ import threading
 
 from .config import config
 from .orchestrator import ToolOrchestrator
-from .llm_call import LLMClient
 
 # Global shutdown flag for signal handling
 _shutdown_requested = threading.Event()
-_active_clients: list = []  # Track OpenAI clients for cleanup
+_active_orchestrators: list[ToolOrchestrator] = []
 
 logger = logging.getLogger(__name__)
 
 
-def _signal_handler(signum: int, frame) -> None:
+def _signal_handler(signum: int, frame) -> None:  # type: ignore[type-arg]
     """Handle SIGINT for graceful shutdown."""
     if _shutdown_requested.is_set():
         # Second interrupt - force exit
         logger.debug("Force shutdown requested")
-        _cleanup_clients()
+        _cleanup()
         sys.exit(1)
     else:
         # First interrupt - request graceful shutdown
@@ -39,26 +38,24 @@ def _signal_handler(signum: int, frame) -> None:
         print("\n\nShutting down... (press Ctrl+C again to force)")
 
 
-def _cleanup_clients() -> None:
-    """Close all tracked OpenAI clients."""
-    for client in _active_clients:
+def _cleanup() -> None:
+    """Close all tracked orchestrators."""
+    for orch in _active_orchestrators:
         try:
-            if hasattr(client, "close") and not getattr(client, "is_closed", False):
-                client.close()
-                logger.debug(f"Closed client: {type(client).__name__}")
+            orch.close()
+            logger.debug("Closed orchestrator")
         except Exception as e:
-            logger.debug(f"Error closing client: {e}")
-    _active_clients.clear()
+            logger.debug("Error closing orchestrator: %s", e)
+    _active_orchestrators.clear()
 
 
-def _register_client(client) -> None:
-    """Register an OpenAI client for cleanup on exit."""
-    if hasattr(client, "close"):
-        _active_clients.append(client)
+def _register_orchestrator(orchestrator: ToolOrchestrator) -> None:
+    """Register an orchestrator for cleanup on exit."""
+    _active_orchestrators.append(orchestrator)
 
 
 # Register cleanup on normal exit
-atexit.register(_cleanup_clients)
+atexit.register(_cleanup)
 
 
 def setup_logging(verbose: bool = False) -> None:
@@ -152,17 +149,18 @@ def print_trace(orchestrator: ToolOrchestrator) -> None:
 class InteractiveCLI:
     """Interactive CLI for Tool Orchestrator."""
 
-    def __init__(self, verbose: bool = False):
+    def __init__(
+        self,
+        verbose: bool = False,
+        base_url: str | None = None,
+    ):
         """Initialize the CLI."""
         self.verbose = verbose
-        self.llm_client = LLMClient()
         self.orchestrator = ToolOrchestrator(
-            llm_client=self.llm_client,
             verbose=verbose,
+            base_url=base_url,
         )
-        # Register the OpenAI client for cleanup
-        if hasattr(self.llm_client, "orchestrator_client"):
-            _register_client(self.llm_client.orchestrator_client)
+        _register_orchestrator(self.orchestrator)
 
     def toggle_verbose(self) -> None:
         """Toggle verbose mode."""
@@ -271,11 +269,7 @@ class InteractiveCLI:
                 break
 
         # Cleanup on exit
-        self.cleanup()
-
-    def cleanup(self) -> None:
-        """Clean up resources."""
-        _cleanup_clients()
+        _cleanup()
 
 
 def main() -> None:
@@ -314,7 +308,10 @@ Use /tools in interactive mode to see available tools and delegates.
         "--orchestrator-url",
         type=str,
         default=None,
-        help=f"Orchestrator model endpoint URL (default: from ORCHESTRATOR_BASE_URL env or {config.orchestrator.base_url})",
+        help=(
+            "Orchestrator model endpoint URL "
+            f"(default: from config or {config.orchestrator.base_url})"
+        ),
     )
 
     parser.add_argument(
@@ -328,17 +325,14 @@ Use /tools in interactive mode to see available tools and delegates.
     # Setup logging
     setup_logging(args.verbose)
 
-    # Create LLM client with custom URL if provided
-    llm_client = LLMClient(orchestrator_url=args.orchestrator_url)
-    _register_client(llm_client.orchestrator_client)
-
     try:
         if args.query:
             # Single query mode
             orchestrator = ToolOrchestrator(
-                llm_client=llm_client,
                 verbose=args.verbose,
+                base_url=args.orchestrator_url,
             )
+            _register_orchestrator(orchestrator)
 
             result = orchestrator.run(args.query)
 
@@ -353,13 +347,13 @@ Use /tools in interactive mode to see available tools and delegates.
                 print(result)
         else:
             # Interactive mode
-            cli = InteractiveCLI(verbose=args.verbose)
-            cli.llm_client = llm_client
-            cli.orchestrator.llm_client = llm_client
-            _register_client(cli.llm_client.orchestrator_client)
+            cli = InteractiveCLI(
+                verbose=args.verbose,
+                base_url=args.orchestrator_url,
+            )
             cli.run()
     finally:
-        _cleanup_clients()
+        _cleanup()
 
 
 if __name__ == "__main__":

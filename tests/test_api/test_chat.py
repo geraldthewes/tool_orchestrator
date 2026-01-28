@@ -61,8 +61,7 @@ class TestChatCompletionsEndpoint:
     """Tests for /v1/chat/completions endpoint."""
 
     @patch("src.api.routes.chat.ToolOrchestrator")
-    @patch("src.api.routes.chat.LLMClient")
-    def test_chat_completion_success(self, mock_llm_client, mock_orchestrator_class):
+    def test_chat_completion_success(self, mock_orchestrator_class):
         """Chat completion should return successful response."""
         mock_instance = Mock()
         mock_instance.run.return_value = "The answer is 42"
@@ -83,8 +82,7 @@ class TestChatCompletionsEndpoint:
         assert "42" in data["choices"][0]["message"]["content"]
 
     @patch("src.api.routes.chat.ToolOrchestrator")
-    @patch("src.api.routes.chat.LLMClient")
-    def test_chat_completion_format(self, mock_llm_client, mock_orchestrator_class):
+    def test_chat_completion_format(self, mock_orchestrator_class):
         """Chat completion should follow OpenAI response format."""
         mock_instance = Mock()
         mock_instance.run.return_value = "Test response"
@@ -133,9 +131,8 @@ class TestChatCompletionsEndpoint:
 
     @patch("src.api.routes.chat.QueryRouter")
     @patch("src.api.routes.chat.ToolOrchestrator")
-    @patch("src.api.routes.chat.LLMClient")
     def test_chat_completion_streaming(
-        self, mock_llm_client, mock_orchestrator_class, mock_router_class
+        self, mock_orchestrator_class, mock_router_class
     ):
         """Chat completion with stream=true should return SSE response."""
         # Mock QueryRouter to force orchestration path
@@ -176,9 +173,8 @@ class TestChatCompletionsEndpoint:
 
     @patch("src.api.routes.chat.QueryRouter")
     @patch("src.api.routes.chat.ToolOrchestrator")
-    @patch("src.api.routes.chat.LLMClient")
     def test_chat_completion_uses_last_user_message(
-        self, mock_llm_client, mock_orchestrator_class, mock_router_class
+        self, mock_orchestrator_class, mock_router_class
     ):
         """Chat completion should use the last user message."""
         # Mock QueryRouter to force orchestration path
@@ -206,9 +202,8 @@ class TestChatCompletionsEndpoint:
 
     @patch("src.api.routes.chat.QueryRouter")
     @patch("src.api.routes.chat.ToolOrchestrator")
-    @patch("src.api.routes.chat.LLMClient")
     def test_chat_completion_error_handling(
-        self, mock_llm_client, mock_orchestrator_class, mock_router_class
+        self, mock_orchestrator_class, mock_router_class
     ):
         """Chat completion should handle orchestrator errors."""
         # Mock QueryRouter to force orchestration path

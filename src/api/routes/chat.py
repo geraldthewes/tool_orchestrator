@@ -26,7 +26,6 @@ from ..schemas import (
     TraceStep,
 )
 from ...orchestrator import ToolOrchestrator
-from ...llm_call import LLMClient
 from ...config import config
 from ...query_router import QueryRouter
 from ...tracing import TracingContext, get_tracing_client
@@ -240,9 +239,7 @@ def create_chat_completion(
         # Create orchestrator and run query
         # Enable verbose output when LOG_LEVEL is DEBUG
         verbose = config.log_level.upper() == "DEBUG"
-        llm_client = LLMClient()
         orchestrator = ToolOrchestrator(
-            llm_client=llm_client,
             verbose=verbose,
             execution_id=execution_id,
             tracing_context=tracing_context,

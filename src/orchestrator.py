@@ -1,16 +1,16 @@
 """
 ToolOrchestra Main Orchestrator
 
-Implements the ReAct (Reasoning-Action-Observation) loop using DSPy
-to coordinate tools and delegate LLMs.
+Implements tool orchestration using a custom Nemotron-native loop
+with stateless prompt reconstruction and OpenAI function-calling.
 """
 
 import logging
+from dataclasses import dataclass, field
 from typing import Optional
 
-from .prompts.modules.orchestrator import (
-    ToolOrchestratorModule,
-    ToolResult,
+from .orchestration.loop import (
+    OrchestrationLoop,
     OrchestrationStep,
 )
 from .config_loader import get_delegates_from_app_config
@@ -18,6 +18,17 @@ from .models import DelegatesConfiguration
 from .tracing import TracingContext
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class ToolResult:
+    """Result from a tool execution."""
+
+    tool_name: str
+    success: bool
+    result: str
+    raw_data: dict = field(default_factory=dict)
+
 
 # Re-export for backward compatibility
 __all__ = [
@@ -30,75 +41,74 @@ __all__ = [
 
 class ToolOrchestrator:
     """
-    Main orchestrator that implements the ReAct loop using DSPy.
+    Main orchestrator using the Nemotron-native orchestration loop.
 
-    Uses DSPy's ReAct module to:
-    1. Reason about the task
-    2. Select and call appropriate tools
-    3. Process observations
-    4. Produce final answers
+    Uses stateless prompt reconstruction with structured observation
+    buffers and OpenAI function-calling format to coordinate tools
+    and delegate LLMs.
     """
 
     def __init__(
         self,
-        llm_client=None,  # Kept for backward compatibility but not used
         max_steps: int = 10,
         verbose: bool = False,
         delegates_config: Optional[DelegatesConfiguration] = None,
         execution_id: Optional[str] = None,
         tracing_context: Optional[TracingContext] = None,
+        base_url: Optional[str] = None,
+        **kwargs: object,
     ):
         """
         Initialize the orchestrator.
 
         Args:
-            llm_client: Deprecated - kept for backward compatibility
-            max_steps: Maximum number of reasoning steps
-            verbose: Enable verbose logging
-            delegates_config: Configuration for delegate LLMs (loaded from YAML if not provided)
-            execution_id: Optional ID for correlating logs across the orchestration
-            tracing_context: Optional tracing context for Langfuse observability
+            max_steps: Maximum number of reasoning steps.
+            verbose: Enable verbose logging.
+            delegates_config: Configuration for delegate LLMs
+                (loaded from YAML if not provided).
+            execution_id: Optional ID for correlating logs.
+            tracing_context: Optional tracing context for Langfuse.
+            base_url: Optional override for the orchestrator LLM endpoint.
+            **kwargs: Ignored for backward compatibility (e.g. llm_client).
         """
         self.max_steps = max_steps
         self.verbose = verbose
         self.execution_id = execution_id
         self.tracing_context = tracing_context
-
-        # Load delegates configuration
         self.delegates_config = delegates_config or get_delegates_from_app_config()
 
-        # Create the DSPy-based orchestrator module
-        self._module = ToolOrchestratorModule(
+        self._loop = OrchestrationLoop(
             max_steps=max_steps,
             verbose=verbose,
             delegates_config=self.delegates_config,
             execution_id=execution_id,
             tracing_context=tracing_context,
+            base_url=base_url,
         )
 
     @property
     def steps(self) -> list[OrchestrationStep]:
-        """Get the orchestration steps from the underlying module."""
-        return self._module.steps
+        """Get the orchestration steps from the underlying loop."""
+        return self._loop.steps
 
     @steps.setter
     def steps(self, value: list[OrchestrationStep]) -> None:
-        """Set the orchestration steps on the underlying module."""
-        self._module.steps = value
+        """Set the orchestration steps on the underlying loop."""
+        self._loop.steps = value
 
     @property
-    def llm_client(self):
-        """Backward compatibility property - returns None as LLM is now managed by DSPy."""
+    def llm_client(self) -> None:
+        """Backward compatibility property - returns None as LLM is internal."""
         return None
 
     @llm_client.setter
-    def llm_client(self, value) -> None:
-        """Backward compatibility setter - ignored as LLM is now managed by DSPy."""
-        pass  # Ignored for backward compatibility
+    def llm_client(self, value: object) -> None:
+        """Backward compatibility setter - ignored."""
+        pass  # noqa: PIE790
 
     @property
     def delegate_handlers(self) -> dict:
-        """Backward compatibility property - returns empty dict as handlers are now in DSPy tools."""
+        """Backward compatibility property - returns empty dict."""
         return {}
 
     def run(self, query: str) -> str:
@@ -106,21 +116,26 @@ class ToolOrchestrator:
         Run the orchestration loop for a given query.
 
         Args:
-            query: The user's question or task
+            query: The user's question or task.
 
         Returns:
-            The final answer string
+            The final answer string.
         """
-        return self._module.run(query)
+        result = self._loop.run(query)
+        return result.answer
 
     def get_trace(self) -> list[dict]:
         """
         Get a trace of all orchestration steps.
 
         Returns:
-            List of step dictionaries
+            List of step dictionaries.
         """
-        return self._module.get_trace()
+        return self._loop.get_trace()
+
+    def close(self) -> None:
+        """Close the underlying OpenAI client."""
+        self._loop.close()
 
 
 def run_query(query: str, verbose: bool = False) -> str:
@@ -128,11 +143,11 @@ def run_query(query: str, verbose: bool = False) -> str:
     Convenience function to run a single query.
 
     Args:
-        query: The user's question or task
-        verbose: Enable verbose output
+        query: The user's question or task.
+        verbose: Enable verbose output.
 
     Returns:
-        The final answer
+        The final answer.
     """
     orchestrator = ToolOrchestrator(verbose=verbose)
     return orchestrator.run(query)

@@ -17,11 +17,15 @@ class OrchestratorConfig:
     model: str = "nvidia/Nemotron-Orchestrator-8B"
     temperature: float = 0.7
     max_steps: int = 10
-    context_length: int = 16384  # vLLM max_model_len
+    context_length: int = 32768  # Qwen3-8B base context window
     # Generation parameters to prevent repetitive output
     stop: list[str] = field(default_factory=list)
     frequency_penalty: float = 0.0
     presence_penalty: float = 0.0
+    # Observation buffer token budgets
+    max_observation_tokens: int = 2048
+    attempts_budget: int = 8000
+    code_budget: int = 12000
 
 
 @dataclass

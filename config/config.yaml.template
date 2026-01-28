@@ -23,6 +23,7 @@ orchestrator:
   model: "nvidia/Nemotron-Orchestrator-8B"
   temperature: 0.7
   max_steps: 10
+  context_length: 32768  # Qwen3-8B base context window
   # Generation parameters to prevent repetitive output
   # Nemotron-Orchestrator-8B is Qwen3-derived; these are its stop tokens
   stop:
@@ -30,6 +31,10 @@ orchestrator:
     - "<|endoftext|>"
   frequency_penalty: 0.3  # Discourage repeating tokens (0.0-2.0)
   presence_penalty: 0.1   # Discourage reusing tokens (0.0-2.0)
+  # Observation buffer token budgets
+  max_observation_tokens: 2048   # Max tokens per individual observation
+  attempts_budget: 8000          # Token budget for attempt history
+  code_budget: 12000             # Token budget for code/calculation results
 
 # =============================================================================
 # API SERVER
@@ -46,9 +51,9 @@ server:
 # =============================================================================
 
 tools:
-  # SearXNG Web Search (local instance or any SearXNG endpoint)
+  # SearXNG Web Search
   searxng:
-    url: "${SEARXNG_URL:-http://localhost:8080/search}"
+    url: "http://searxng-cache.cluster:9999/search"
     timeout: 30
 
   # Remote Python Executor (sandboxed code execution service)

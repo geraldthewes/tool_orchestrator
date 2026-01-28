@@ -1,12 +1,12 @@
 # Tool Orchestrator
 
-**Open-source LLM tool orchestration framework with OpenAI-compatible API and DSPy optimization**
+**Open-source LLM tool orchestration framework with OpenAI-compatible API**
 
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![OpenAI Compatible](https://img.shields.io/badge/OpenAI-Compatible-green.svg)](https://platform.openai.com/docs/api-reference)
 
-A Python framework for LLM orchestration using ReAct-style reasoning (Reason -> Action -> Observation). Works as a drop-in replacement for OpenAI endpoints with built-in web search, Python execution, multi-LLM delegation, and automatic prompt optimization via DSPy.
+A Python framework for LLM orchestration using ReAct-style reasoning (Reason -> Action -> Observation). Works as a drop-in replacement for OpenAI endpoints with built-in web search, Python execution, and multi-LLM delegation. Uses NVIDIA's Nemotron-native architecture with stateless prompt reconstruction and OpenAI function-calling.
 
 ## What is Tool Orchestrator?
 
@@ -19,7 +19,6 @@ Unlike frameworks like LangChain or LlamaIndex that require custom integration c
 - **ReAct orchestration** - Reason -> Action -> Observation -> Repeat until final answer
 - **Tool integration** - Web search (SearXNG), Python execution, math calculations
 - **Delegate LLMs** - Route specialized tasks to reasoning, coding, or fast-response models
-- **DSPy prompt optimization** - Automatic prompt tuning with GEPA optimization for improved accuracy
 - **Streaming support** - Server-sent events for real-time responses
 - **Observability** - Optional Langfuse tracing for request lifecycle monitoring
 
@@ -36,13 +35,11 @@ The service also includes an interactive CLI for development and testing.
 | ReAct reasoning | **Yes** | Yes | Limited | Yes |
 | Multi-LLM delegation | **Yes** | Yes | Yes | Yes |
 | Built-in web search | **Yes** | Requires setup | Requires setup | No |
-| DSPy optimization | **Yes** | No | No | No |
 
 **Ideal for:**
 - Teams wanting OpenAI-compatible endpoints without vendor lock-in
 - Projects needing ReAct-style tool orchestration with minimal setup
 - Developers who want to leverage multiple specialized LLMs
-- Applications requiring automatic prompt optimization via DSPy
 
 ## Architecture: How LLM Tool Orchestration Works
 
@@ -309,7 +306,6 @@ cp config/config.yaml.template config/config.yaml
 | `fast_path` | Fast-path routing for simple queries |
 | `logging` | Log level configuration |
 | `langfuse` | Observability settings |
-| `dspy` | DSPy optimization paths |
 | `delegates` | Delegate LLM definitions |
 
 **Note:** `config/config.yaml` is gitignored as it may contain secrets (API keys).
@@ -580,99 +576,6 @@ pytest tests/test_tools.py -v
 pytest tests/test_orchestration.py -v
 ```
 
-### Prompt Optimization
-
-Tool Orchestrator uses [DSPy](https://dspy.ai/) for declarative prompt programming. The project includes 150+ training examples and supports automatic prompt optimization using GEPA (Genetic-Pareto optimization).
-
-**Why GEPA?**
-
-| Optimizer | Strengths | When to Use |
-|-----------|-----------|-------------|
-| **GEPA** | Outperforms MIPROv2 by 10%+, 35x fewer rollouts than GRPO, trajectory reflection | Best for ReAct-style programs, moderate datasets (50-200 examples) |
-| MIPROv2 | Good for larger datasets, Bayesian optimization | Fallback if GEPA unavailable |
-| BootstrapFewShot | Simple, fast, good starting point | Small datasets (~10 examples) |
-
-**Running Optimization:**
-
-```bash
-# Dry run to verify examples load correctly
-python scripts/optimize_prompts.py --dry-run
-
-# Run GEPA optimization (default)
-python scripts/optimize_prompts.py
-
-# With specific options
-python scripts/optimize_prompts.py --strategy gepa --gepa-auto medium --output-dir data/optimized_prompts
-
-# Only optimize orchestrator module
-python scripts/optimize_prompts.py --module orchestrator
-
-# Use bootstrap for faster/simpler optimization
-python scripts/optimize_prompts.py --strategy bootstrap
-
-# With checkpointing (enabled by default)
-python scripts/optimize_prompts.py --checkpoint-dir data/checkpoints
-
-# Resume from best checkpoint
-python scripts/optimize_prompts.py --resume --checkpoint-dir data/checkpoints
-
-# Disable checkpointing
-python scripts/optimize_prompts.py --no-checkpoint
-```
-
-**CLI Options:**
-
-| Option | Default | Description |
-|--------|---------|-------------|
-| `--strategy` | `gepa` | Optimization strategy (`gepa`, `mipro`, `bootstrap`) |
-| `--output-dir` | `data/optimized_prompts` | Directory to save optimized modules |
-| `--module` | `all` | Module to optimize (`all`, `orchestrator`, `router`) |
-| `--gepa-auto` | `light` | GEPA preset (`light`, `medium`, `heavy`) |
-| `--dev-ratio` | `0.8` | Ratio of examples for validation set |
-| `--checkpoint-dir` | `data/optimized_prompts/checkpoints` | Directory to save checkpoints |
-| `--resume` | - | Resume from best checkpoint if available |
-| `--no-checkpoint` | - | Disable checkpointing |
-| `--dry-run` | - | Show what would be done without running |
-| `-v` | - | Enable verbose logging |
-
-**Deploying Optimized Checkpoints:**
-
-After running optimization, deploy the best checkpoint:
-
-```bash
-# Copy best checkpoint to deploy directory
-mkdir -p deploy/checkpoints/orchestrator
-cp data/checkpoints/orchestrator/checkpoint_005.json deploy/checkpoints/orchestrator/
-cp data/checkpoints/orchestrator/manifest.json deploy/checkpoints/orchestrator/
-
-# Set config to load checkpoints at runtime
-# In config/config.yaml:
-#   dspy:
-#     optimized_prompts_path: "deploy/checkpoints"
-```
-
-The service automatically loads the best checkpoint from the configured path at startup. Training checkpoints (`data/checkpoints/`) are gitignored, while deployment checkpoints (`deploy/checkpoints/`) are committed.
-
-**Programmatic Usage:**
-
-```python
-from src.prompts.optimization import PromptOptimizer, load_all_training_examples
-from src.prompts.modules import ToolOrchestratorModule
-
-# Load training examples
-examples = load_all_training_examples()
-
-# Create optimizer with GEPA strategy
-optimizer = PromptOptimizer(strategy="gepa", gepa_auto="light")
-
-# Optimize orchestrator module
-module = ToolOrchestratorModule()
-optimized = optimizer.optimize_orchestrator(module, trainset=examples)
-
-# Save optimized module
-PromptOptimizer.save(optimized, "data/optimized_prompts/orchestrator.json")
-```
-
 ## Project Structure
 
 ```
@@ -684,21 +587,23 @@ tool_orchestrator/
 │   ├── config.yaml              # Main configuration (gitignored)
 │   └── config.yaml.template     # Configuration template
 ├── data/
-│   ├── examples/                # DSPy training examples (150+)
-│   └── optimized_prompts/       # Optimized module outputs
+│   └── examples/                # Training examples
 ├── deploy/
 │   ├── build.yaml               # JobForge build config
 │   └── tool-orchestrator.nomad  # Nomad job specification
 ├── scripts/
 │   ├── langfuse-setup.sh        # Langfuse/Vault setup script
-│   └── optimize_prompts.py      # DSPy prompt optimization CLI
+│   └── analyze_langfuse_traces.py  # Trace analysis
 ├── src/
 │   ├── __init__.py
 │   ├── config.py                # Configuration management
-│   ├── llm_call.py              # LLM client
-│   ├── orchestrator.py          # ReAct loop
-│   ├── query_router.py          # Fast-path routing
+│   ├── orchestrator.py          # Orchestrator entry point
+│   ├── query_router/            # Fast-path routing
 │   ├── interactive.py           # CLI interface
+│   ├── orchestration/           # Nemotron-native orchestration
+│   │   ├── loop.py              # Core loop (function-calling)
+│   │   ├── buffers.py           # Observation buffers + token budgets
+│   │   └── tool_defs.py         # OpenAI tool definitions
 │   ├── api/                     # FastAPI server
 │   │   ├── main.py
 │   │   ├── schemas.py           # Pydantic models
@@ -712,9 +617,8 @@ tool_orchestrator/
 │   │   ├── python_executor.py   # Safe Python execution
 │   │   ├── math_solver.py       # Math expressions
 │   │   └── llm_delegate.py      # LLM delegation
-│   ├── prompts/                 # DSPy prompt programming
-│   │   ├── modules/             # DSPy modules (router, orchestrator)
-│   │   ├── optimization/        # GEPA/MIPROv2/Bootstrap optimizers
+│   ├── prompts/                 # DSPy query routing
+│   │   ├── modules/             # DSPy modules (router)
 │   │   └── adapters/            # LM adapters for DSPy
 │   └── tracing/                 # Langfuse observability
 │       ├── __init__.py
@@ -723,6 +627,10 @@ tool_orchestrator/
 └── tests/
     ├── test_tools.py
     ├── test_orchestration.py
+    ├── test_orchestration/       # New orchestration tests
+    │   ├── test_buffers.py
+    │   ├── test_tool_defs.py
+    │   └── test_loop.py
     └── test_tracing.py
 ```
 
@@ -811,4 +719,4 @@ If you find Tool Orchestrator useful, please consider giving it a star on GitHub
 - [ReAct: Synergizing Reasoning and Acting](https://react-lm.github.io/)
 - [Nemotron-Orchestrator-8B on Hugging Face](https://huggingface.co/nvidia/Nemotron-Orchestrator-8B)
 - [OpenAI Chat Completions API](https://platform.openai.com/docs/api-reference/chat)
-- [DSPy Documentation](https://dspy.ai/)
+- [NVIDIA ToolOrchestra Reference](https://github.com/NVIDIA/ToolOrchestra)
