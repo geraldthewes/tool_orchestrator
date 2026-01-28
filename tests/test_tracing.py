@@ -448,6 +448,7 @@ class TestTracingWithMockedLangfuse:
             call_kwargs = mock_instance.start_as_current_observation.call_args[1]
             assert call_kwargs["as_type"] == "span"
             assert call_kwargs["name"] == "test_span"
+            assert "trace_context" not in call_kwargs
         finally:
             shutdown_tracing()
 
@@ -475,6 +476,7 @@ class TestTracingWithMockedLangfuse:
             assert call_kwargs["as_type"] == "generation"
             assert call_kwargs["name"] == "test_gen"
             assert call_kwargs["model"] == "gpt-4"
+            assert "trace_context" not in call_kwargs
         finally:
             shutdown_tracing()
 
@@ -1197,80 +1199,68 @@ class TestTokenAwareLMUsagePassthrough:
         assert result.usage == history_entry.usage
 
 
-class TestExplicitTraceContextPropagation:
-    """Tests for explicit TraceContext propagation to child observations."""
+class TestOTELContextPropagation:
+    """Tests verifying OTEL automatic context propagation (no explicit trace_context)."""
 
     @patch("src.tracing.client.Langfuse")
-    def test_tracing_context_get_trace_context_returns_valid_context(
-        self, mock_langfuse_class
-    ):
-        """Test TracingContext.get_trace_context() returns valid TraceContext after start_trace()."""
+    def test_span_does_not_pass_trace_context(self, mock_langfuse_class):
+        """Verify span does not pass trace_context to start_as_current_observation."""
         from src.tracing.client import init_tracing_client, shutdown_tracing
-        from src.tracing.context import TracingContext
+        from src.tracing.context import SpanContext
 
         mock_instance = MagicMock()
         mock_context_manager = MagicMock()
         mock_span = MagicMock()
-        mock_span.trace_id = "test-trace-id-123"
-        mock_span.id = "test-span-id-456"
         mock_context_manager.__enter__ = MagicMock(return_value=mock_span)
         mock_context_manager.__exit__ = MagicMock(return_value=None)
         mock_instance.start_as_current_observation.return_value = mock_context_manager
-        mock_instance.auth_check.return_value = True
         mock_langfuse_class.return_value = mock_instance
 
         try:
             init_tracing_client(public_key="pk-test", secret_key="sk-test")
 
-            ctx = TracingContext(execution_id="test-123")
-            ctx.start_trace(name="test_trace", query="test query")
+            span = SpanContext(name="test_span", enabled=True)
+            span.start()
 
-            trace_context = ctx.get_trace_context()
-
-            # TraceContext is a TypedDict, so access as dict
-            assert trace_context is not None
-            assert trace_context["trace_id"] == "test-trace-id-123"
-            assert trace_context["parent_span_id"] == "test-span-id-456"
+            call_kwargs = mock_instance.start_as_current_observation.call_args[1]
+            assert "trace_context" not in call_kwargs
         finally:
             shutdown_tracing()
 
     @patch("src.tracing.client.Langfuse")
-    def test_tracing_context_get_trace_context_returns_none_before_start(
-        self, mock_langfuse_class
-    ):
-        """Test TracingContext.get_trace_context() returns None before start_trace()."""
+    def test_generation_does_not_pass_trace_context(self, mock_langfuse_class):
+        """Verify generation does not pass trace_context to start_as_current_observation."""
         from src.tracing.client import init_tracing_client, shutdown_tracing
-        from src.tracing.context import TracingContext
+        from src.tracing.context import GenerationContext
 
         mock_instance = MagicMock()
-        mock_instance.auth_check.return_value = True
+        mock_context_manager = MagicMock()
+        mock_generation = MagicMock()
+        mock_context_manager.__enter__ = MagicMock(return_value=mock_generation)
+        mock_context_manager.__exit__ = MagicMock(return_value=None)
+        mock_instance.start_as_current_observation.return_value = mock_context_manager
         mock_langfuse_class.return_value = mock_instance
 
         try:
             init_tracing_client(public_key="pk-test", secret_key="sk-test")
 
-            ctx = TracingContext(execution_id="test-123")
-            # Don't call start_trace()
+            gen = GenerationContext(name="test_gen", model="gpt-4", enabled=True)
+            gen.start()
 
-            trace_context = ctx.get_trace_context()
-
-            assert trace_context is None
+            call_kwargs = mock_instance.start_as_current_observation.call_args[1]
+            assert "trace_context" not in call_kwargs
         finally:
             shutdown_tracing()
 
     @patch("src.tracing.client.Langfuse")
-    def test_span_receives_trace_context_from_tracing_context(
-        self, mock_langfuse_class
-    ):
-        """Test span created via TracingContext.span() receives trace_context."""
+    def test_child_span_does_not_pass_trace_context(self, mock_langfuse_class):
+        """Verify child span does not pass trace_context to start_as_current_observation."""
         from src.tracing.client import init_tracing_client, shutdown_tracing
         from src.tracing.context import TracingContext
 
         mock_instance = MagicMock()
         mock_context_manager = MagicMock()
         mock_span = MagicMock()
-        mock_span.trace_id = "test-trace-id"
-        mock_span.id = "root-span-id"
         mock_context_manager.__enter__ = MagicMock(return_value=mock_span)
         mock_context_manager.__exit__ = MagicMock(return_value=None)
         mock_instance.start_as_current_observation.return_value = mock_context_manager
@@ -1283,222 +1273,38 @@ class TestExplicitTraceContextPropagation:
             ctx = TracingContext(execution_id="test-123")
             ctx.start_trace(name="test_trace")
 
-            # Reset mock to capture span creation call
+            # Reset mock to capture child span creation
             mock_instance.start_as_current_observation.reset_mock()
             mock_instance.start_as_current_observation.return_value = (
                 mock_context_manager
             )
 
-            with ctx.span(name="child_span") as _child:
-                pass
-
-            # Verify trace_context was passed to the child span (TraceContext is a TypedDict)
-            call_kwargs = mock_instance.start_as_current_observation.call_args[1]
-            assert "trace_context" in call_kwargs
-            assert call_kwargs["trace_context"] is not None
-            assert call_kwargs["trace_context"]["trace_id"] == "test-trace-id"
-            assert call_kwargs["trace_context"]["parent_span_id"] == "root-span-id"
-        finally:
-            shutdown_tracing()
-
-    @patch("src.tracing.client.Langfuse")
-    def test_generation_receives_trace_context_from_tracing_context(
-        self, mock_langfuse_class
-    ):
-        """Test generation created via TracingContext.generation() receives trace_context."""
-        from src.tracing.client import init_tracing_client, shutdown_tracing
-        from src.tracing.context import TracingContext
-
-        mock_instance = MagicMock()
-        mock_context_manager = MagicMock()
-        mock_span = MagicMock()
-        mock_span.trace_id = "test-trace-id"
-        mock_span.id = "root-span-id"
-        mock_context_manager.__enter__ = MagicMock(return_value=mock_span)
-        mock_context_manager.__exit__ = MagicMock(return_value=None)
-        mock_instance.start_as_current_observation.return_value = mock_context_manager
-        mock_instance.auth_check.return_value = True
-        mock_langfuse_class.return_value = mock_instance
-
-        try:
-            init_tracing_client(public_key="pk-test", secret_key="sk-test")
-
-            ctx = TracingContext(execution_id="test-123")
-            ctx.start_trace(name="test_trace")
-
-            # Reset mock to capture generation creation call
-            mock_instance.start_as_current_observation.reset_mock()
-            mock_generation = MagicMock()
-            mock_gen_context_manager = MagicMock()
-            mock_gen_context_manager.__enter__ = MagicMock(return_value=mock_generation)
-            mock_gen_context_manager.__exit__ = MagicMock(return_value=None)
-            mock_instance.start_as_current_observation.return_value = (
-                mock_gen_context_manager
-            )
-
-            with ctx.generation(name="llm_call", model="gpt-4") as _gen:
-                pass
-
-            # Verify trace_context was passed to the generation (TraceContext is a TypedDict)
-            call_kwargs = mock_instance.start_as_current_observation.call_args[1]
-            assert "trace_context" in call_kwargs
-            assert call_kwargs["trace_context"] is not None
-            assert call_kwargs["trace_context"]["trace_id"] == "test-trace-id"
-        finally:
-            shutdown_tracing()
-
-    @patch("src.tracing.client.Langfuse")
-    def test_child_span_receives_parent_span_as_parent(self, mock_langfuse_class):
-        """Test child span created via SpanContext.child_span() uses parent span as parent."""
-        from src.tracing.client import init_tracing_client, shutdown_tracing
-        from src.tracing.context import TracingContext
-
-        mock_instance = MagicMock()
-
-        # First call creates root span
-        mock_root_span = MagicMock()
-        mock_root_span.trace_id = "test-trace-id"
-        mock_root_span.id = "root-span-id"
-        mock_root_context_manager = MagicMock()
-        mock_root_context_manager.__enter__ = MagicMock(return_value=mock_root_span)
-        mock_root_context_manager.__exit__ = MagicMock(return_value=None)
-
-        # Second call creates first child span
-        mock_parent_span = MagicMock()
-        mock_parent_span.trace_id = "test-trace-id"
-        mock_parent_span.id = "parent-span-id"
-        mock_parent_context_manager = MagicMock()
-        mock_parent_context_manager.__enter__ = MagicMock(return_value=mock_parent_span)
-        mock_parent_context_manager.__exit__ = MagicMock(return_value=None)
-
-        # Third call creates grandchild span
-        mock_child_span = MagicMock()
-        mock_child_span.trace_id = "test-trace-id"
-        mock_child_span.id = "child-span-id"
-        mock_child_context_manager = MagicMock()
-        mock_child_context_manager.__enter__ = MagicMock(return_value=mock_child_span)
-        mock_child_context_manager.__exit__ = MagicMock(return_value=None)
-
-        mock_instance.start_as_current_observation.side_effect = [
-            mock_root_context_manager,
-            mock_parent_context_manager,
-            mock_child_context_manager,
-        ]
-        mock_instance.auth_check.return_value = True
-        mock_langfuse_class.return_value = mock_instance
-
-        try:
-            init_tracing_client(public_key="pk-test", secret_key="sk-test")
-
-            ctx = TracingContext(execution_id="test-123")
-            ctx.start_trace(name="test_trace")
-
             with ctx.span(name="parent_span") as parent:
+                # Reset again to capture grandchild creation
+                mock_instance.start_as_current_observation.reset_mock()
+                mock_instance.start_as_current_observation.return_value = (
+                    mock_context_manager
+                )
+
                 with parent.child_span(name="child_span") as _child:
                     pass
 
-            # Get the call for the grandchild span (third call)
-            calls = mock_instance.start_as_current_observation.call_args_list
-            assert len(calls) == 3
-
-            grandchild_call_kwargs = calls[2][1]
-            assert "trace_context" in grandchild_call_kwargs
-            # The grandchild should have the parent_span as its parent (TraceContext is a TypedDict)
-            assert (
-                grandchild_call_kwargs["trace_context"]["trace_id"] == "test-trace-id"
-            )
-            assert (
-                grandchild_call_kwargs["trace_context"]["parent_span_id"]
-                == "parent-span-id"
-            )
+            call_kwargs = mock_instance.start_as_current_observation.call_args[1]
+            assert "trace_context" not in call_kwargs
         finally:
             shutdown_tracing()
 
-    @patch("src.tracing.client.Langfuse")
-    def test_generation_from_span_uses_span_as_parent(self, mock_langfuse_class):
-        """Test generation created via SpanContext.generation() uses span as parent."""
-        from src.tracing.client import init_tracing_client, shutdown_tracing
+    def test_tracing_context_has_no_get_trace_context(self):
+        """Verify TracingContext no longer has get_trace_context method."""
         from src.tracing.context import TracingContext
 
-        mock_instance = MagicMock()
+        assert not hasattr(TracingContext, "get_trace_context")
 
-        # First call creates root span
-        mock_root_span = MagicMock()
-        mock_root_span.trace_id = "test-trace-id"
-        mock_root_span.id = "root-span-id"
-        mock_root_context_manager = MagicMock()
-        mock_root_context_manager.__enter__ = MagicMock(return_value=mock_root_span)
-        mock_root_context_manager.__exit__ = MagicMock(return_value=None)
-
-        # Second call creates parent span
-        mock_parent_span = MagicMock()
-        mock_parent_span.trace_id = "test-trace-id"
-        mock_parent_span.id = "parent-span-id"
-        mock_parent_context_manager = MagicMock()
-        mock_parent_context_manager.__enter__ = MagicMock(return_value=mock_parent_span)
-        mock_parent_context_manager.__exit__ = MagicMock(return_value=None)
-
-        # Third call creates generation
-        mock_generation = MagicMock()
-        mock_gen_context_manager = MagicMock()
-        mock_gen_context_manager.__enter__ = MagicMock(return_value=mock_generation)
-        mock_gen_context_manager.__exit__ = MagicMock(return_value=None)
-
-        mock_instance.start_as_current_observation.side_effect = [
-            mock_root_context_manager,
-            mock_parent_context_manager,
-            mock_gen_context_manager,
-        ]
-        mock_instance.auth_check.return_value = True
-        mock_langfuse_class.return_value = mock_instance
-
-        try:
-            init_tracing_client(public_key="pk-test", secret_key="sk-test")
-
-            ctx = TracingContext(execution_id="test-123")
-            ctx.start_trace(name="test_trace")
-
-            with ctx.span(name="parent_span") as parent:
-                with parent.generation(name="llm_call", model="gpt-4") as _gen:
-                    pass
-
-            # Get the call for the generation (third call)
-            calls = mock_instance.start_as_current_observation.call_args_list
-            assert len(calls) == 3
-
-            gen_call_kwargs = calls[2][1]
-            assert "trace_context" in gen_call_kwargs
-            assert gen_call_kwargs["as_type"] == "generation"
-            # The generation should have the parent_span as its parent (TraceContext is a TypedDict)
-            assert gen_call_kwargs["trace_context"]["trace_id"] == "test-trace-id"
-            assert (
-                gen_call_kwargs["trace_context"]["parent_span_id"] == "parent-span-id"
-            )
-        finally:
-            shutdown_tracing()
-
-    def test_span_context_get_child_trace_context_without_parent(self):
-        """Test SpanContext._get_child_trace_context() returns None without parent context."""
+    def test_span_context_has_no_get_child_trace_context(self):
+        """Verify SpanContext no longer has _get_child_trace_context method."""
         from src.tracing.context import SpanContext
 
-        span = SpanContext(name="test", enabled=False)
-        span.start()
-
-        result = span._get_child_trace_context()
-        assert result is None
-
-    def test_get_trace_context_disabled_returns_none(self):
-        """Test get_trace_context returns None when tracing disabled."""
-        from src.tracing.context import TracingContext
-        from src.tracing.client import shutdown_tracing
-
-        shutdown_tracing()
-
-        ctx = TracingContext(execution_id="test-123")
-        ctx.start_trace(name="test_trace")
-
-        result = ctx.get_trace_context()
-        assert result is None
+        assert not hasattr(SpanContext, "_get_child_trace_context")
 
 
 class TestConnectivityValidation:

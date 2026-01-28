@@ -459,7 +459,9 @@ class TracedLM(dspy.LM):
         if "max_tokens" in kwargs:
             model_params["max_tokens"] = kwargs["max_tokens"]
 
-        logger.debug(f"TracedLM.forward called for {self._name}, trace_id={self._tracing_context._trace_id}")
+        logger.debug(
+            f"TracedLM.forward called for {self._name}, execution_id={self._tracing_context.execution_id}"
+        )
         with self._tracing_context.generation(
             name=f"llm:{self._name}",
             model=self._lm.model,
