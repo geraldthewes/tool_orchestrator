@@ -5,6 +5,7 @@ Implements ReAct-style reasoning using DSPy's built-in ReAct module
 with adapters for existing ToolOrchestra tools.
 """
 
+import contextvars
 import inspect
 import logging
 import time
@@ -26,6 +27,14 @@ from ...models import DelegatesConfiguration
 from ...tracing import TracingContext
 
 logger = logging.getLogger(__name__)
+
+# Thread-local storage for active tracing context during concurrent execution.
+# This is needed because GEPA runs multiple examples concurrently on the same
+# ToolOrchestratorModule instance. Using contextvars ensures each thread/context
+# has its own tracing context that doesn't get overwritten by concurrent executions.
+_active_tracing_context_var: contextvars.ContextVar[Optional[TracingContext]] = (
+    contextvars.ContextVar("active_tracing_context", default=None)
+)
 
 
 @dataclass
@@ -80,6 +89,8 @@ def create_dspy_tool(
 
     def tool_func(**kwargs) -> str:
         """Execute the tool and return formatted result."""
+        logger.debug(f"Tool '{name}' called with kwargs: {list(kwargs.keys())}")
+
         # Check for malformed JSON input (DSPy sets "raw" key when parsing fails)
         if "raw" in kwargs:
             expected_params = ", ".join(parameters.keys())
@@ -87,8 +98,14 @@ def create_dspy_tool(
 
         # Get tracing context - prefer getter for per-call tracing, fallback to static context
         ctx = tracing_context_getter() if tracing_context_getter else tracing_context
+        logger.debug(
+            f"Tool '{name}' tracing context: "
+            f"getter={tracing_context_getter is not None}, "
+            f"ctx={ctx is not None}"
+        )
 
         if ctx:
+            logger.debug(f"Tool '{name}' creating span, trace_id={ctx._trace_id}")
             with ctx.span(
                 name=f"tool:{name}",
                 input=kwargs,
@@ -192,6 +209,10 @@ def create_delegate_tool(
 
     def delegate_tool(**kwargs) -> str:
         """Delegate to specialized LLM."""
+        logger.debug(
+            f"Delegate tool '{tool_name}' called with kwargs: {list(kwargs.keys())}"
+        )
+
         # Check for malformed JSON input (DSPy sets "raw" key when parsing fails)
         if "raw" in kwargs and "query" not in kwargs:
             return 'Error: Invalid input format. Expected JSON: {"query": "your question or task"}'
@@ -213,8 +234,16 @@ def create_delegate_tool(
 
         # Get tracing context - prefer getter for per-call tracing, fallback to static context
         ctx = tracing_context_getter() if tracing_context_getter else tracing_context
+        logger.debug(
+            f"Delegate tool '{tool_name}' tracing context: "
+            f"getter={tracing_context_getter is not None}, "
+            f"ctx={ctx is not None}"
+        )
 
         if ctx:
+            logger.debug(
+                f"Delegate tool '{tool_name}' creating span, trace_id={ctx._trace_id}"
+            )
             with ctx.span(
                 name=f"tool:{tool_name}",
                 input={
@@ -323,9 +352,8 @@ class ToolOrchestratorModule(dspy.Module):
         self.trace_metadata = trace_metadata or {}
         self.steps: list[OrchestrationStep] = []
 
-        # Active tracing context for current forward() call
-        # This is set dynamically when trace_per_call=True
-        self._active_tracing_context: Optional[TracingContext] = None
+        # Note: Active tracing context is stored in the module-level ContextVar
+        # _active_tracing_context_var to support concurrent execution (GEPA).
 
         # Load delegates configuration
         self.delegates_config = delegates_config or get_delegates_from_app_config()
@@ -355,17 +383,28 @@ class ToolOrchestratorModule(dspy.Module):
         """
         Get the active tracing context for the current forward() call.
 
-        When trace_per_call=True, this returns the per-call context created
-        in forward(). Otherwise, it returns the shared tracing_context passed
-        to __init__ (or None if not provided).
+        When trace_per_call=True, this returns the per-call context stored
+        in the thread-local ContextVar. Otherwise, it falls back to the shared
+        tracing_context passed to __init__ (or None if not provided).
 
         This method is used as a getter by tools to defer context resolution
         until tool execution time, enabling proper tracing in per-call mode.
 
+        The context is stored in a ContextVar to support concurrent execution
+        (e.g., GEPA running multiple examples in parallel on the same module).
+
         Returns:
             The active TracingContext, or None if tracing is not enabled.
         """
-        return self._active_tracing_context or self.tracing_context
+        active_ctx = _active_tracing_context_var.get()
+        ctx = active_ctx or self.tracing_context
+        logger.debug(
+            f"_get_active_tracing_context called: "
+            f"_active={active_ctx is not None}, "
+            f"shared={self.tracing_context is not None}, "
+            f"returning={ctx is not None}"
+        )
+        return ctx
 
     def _build_dspy_tools(self) -> list[Callable]:
         """Build list of DSPy-compatible tool functions."""
@@ -452,15 +491,15 @@ class ToolOrchestratorModule(dspy.Module):
                     "question": question[:500] if len(question) > 500 else question,
                 },
             )
-            # Set as active context so tools use this trace
-            self._active_tracing_context = local_tracing_context
+            # Set as active context so tools use this trace (thread-local)
+            _active_tracing_context_var.set(local_tracing_context)
             logger.debug(
                 f"Created per-call trace: execution_id={execution_id}, "
                 f"trace_id={local_tracing_context._trace_id}"
             )
         else:
             # Use shared tracing context (original behavior)
-            self._active_tracing_context = self.tracing_context
+            _active_tracing_context_var.set(self.tracing_context)
 
         try:
             # Always use the orchestrator LM for ReAct tool-calling
@@ -540,8 +579,8 @@ class ToolOrchestratorModule(dspy.Module):
                 logger.debug(
                     f"Ended per-call trace: trace_id={local_tracing_context._trace_id}"
                 )
-            # Clear the active context
-            self._active_tracing_context = None
+            # Clear the active context (thread-local)
+            _active_tracing_context_var.set(None)
 
     def run(self, query: str) -> str:
         """
