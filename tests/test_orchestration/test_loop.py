@@ -11,30 +11,21 @@ from src.orchestration.loop import (
 )
 
 
-def _make_mock_message(
-    content: str = "",
-    tool_calls: list | None = None,
-) -> Mock:
-    """Create a mock chat completion message."""
+def _make_tool_call_text(name: str, arguments: dict) -> str:
+    """Build a <tool_call> XML block for mock LLM output."""
+    return (
+        "<tool_call>\n"
+        + json.dumps({"name": name, "arguments": arguments})
+        + "\n</tool_call>"
+    )
+
+
+def _make_mock_response(content: str, usage: Mock | None = None) -> Mock:
+    """Create a mock chat completion response returning plain text."""
     msg = Mock()
     msg.content = content
-    msg.tool_calls = tool_calls
-    return msg
-
-
-def _make_tool_call(name: str, arguments: dict) -> Mock:
-    """Create a mock tool call."""
-    tc = Mock()
-    tc.function = Mock()
-    tc.function.name = name
-    tc.function.arguments = json.dumps(arguments)
-    return tc
-
-
-def _make_mock_response(message: Mock, usage: Mock | None = None) -> Mock:
-    """Create a mock chat completion response."""
     response = Mock()
-    response.choices = [Mock(message=message)]
+    response.choices = [Mock(message=msg)]
     response.usage = usage
     return response
 
@@ -71,7 +62,7 @@ class TestMessageBuilding:
 
     @patch("src.orchestration.loop.OpenAI")
     def test_build_messages_no_observations(self, mock_openai_cls):
-        """Without observations, messages should be [system, user]."""
+        """Without observations or system_prompt, messages use base SYSTEM_PROMPT."""
         loop = OrchestrationLoop()
         messages = loop._build_messages("What is 2+2?")
 
@@ -80,6 +71,15 @@ class TestMessageBuilding:
         assert messages[0]["content"] == SYSTEM_PROMPT
         assert messages[1]["role"] == "user"
         assert messages[1]["content"] == "What is 2+2?"
+
+    @patch("src.orchestration.loop.OpenAI")
+    def test_build_messages_with_system_prompt(self, mock_openai_cls):
+        """Custom system_prompt should be used when provided."""
+        loop = OrchestrationLoop()
+        custom = SYSTEM_PROMPT + "\n\n# Tools\n<tools>...</tools>"
+        messages = loop._build_messages("Hello", system_prompt=custom)
+
+        assert messages[0]["content"] == custom
 
     @patch("src.orchestration.loop.OpenAI")
     def test_build_messages_with_observations(self, mock_openai_cls):
@@ -126,6 +126,85 @@ class TestThinkBlockExtraction:
         assert "The answer is 42." in stripped
 
 
+class TestToolCallParsing:
+    """Tests for <tool_call> XML parsing."""
+
+    def test_parse_tool_call_basic(self):
+        """Should parse a basic tool_call block."""
+        content = (
+            '<tool_call>\n{"name": "calculate", "arguments": {"expression": "3^8"}}\n'
+            "</tool_call>"
+        )
+        result = OrchestrationLoop._parse_tool_call(content)
+        assert result is not None
+        name, args = result
+        assert name == "calculate"
+        assert args == {"expression": "3^8"}
+
+    def test_parse_tool_call_with_think(self):
+        """Should parse tool_call even when preceded by <think> block."""
+        content = (
+            "<think>I need to search</think>\n\n"
+            '<tool_call>\n{"name": "web_search", "arguments": {"query": "test"}}\n'
+            "</tool_call>"
+        )
+        result = OrchestrationLoop._parse_tool_call(content)
+        assert result is not None
+        name, args = result
+        assert name == "web_search"
+        assert args == {"query": "test"}
+
+    def test_parse_tool_call_no_match(self):
+        """Should return None when no tool_call present."""
+        content = "Just a plain text answer."
+        assert OrchestrationLoop._parse_tool_call(content) is None
+
+    def test_parse_tool_call_invalid_json(self):
+        """Should return None for malformed JSON inside tool_call."""
+        content = "<tool_call>\nnot valid json\n</tool_call>"
+        assert OrchestrationLoop._parse_tool_call(content) is None
+
+    def test_parse_tool_call_missing_name(self):
+        """Should return None when name is empty."""
+        content = '<tool_call>\n{"name": "", "arguments": {}}\n</tool_call>'
+        assert OrchestrationLoop._parse_tool_call(content) is None
+
+    def test_parse_tool_call_string_arguments(self):
+        """Should handle arguments as a JSON string (double-encoded)."""
+        inner_args = json.dumps({"expression": "2+2"})
+        content = (
+            "<tool_call>\n"
+            + json.dumps({"name": "calculate", "arguments": inner_args})
+            + "\n</tool_call>"
+        )
+        result = OrchestrationLoop._parse_tool_call(content)
+        assert result is not None
+        _, args = result
+        assert args == {"expression": "2+2"}
+
+
+class TestStripTags:
+    """Tests for _strip_tags helper."""
+
+    def test_strip_all_tags(self):
+        """Should strip think, tool_call, and unwrap message tags."""
+        content = (
+            "<think>reasoning</think>"
+            "<message>The answer is 42</message>"
+            '<tool_call>{"name": "answer", "arguments": {}}</tool_call>'
+        )
+        stripped = OrchestrationLoop._strip_tags(content)
+        assert "<think>" not in stripped
+        assert "<tool_call>" not in stripped
+        assert "<message>" not in stripped
+        assert "The answer is 42" in stripped
+
+    def test_strip_tags_plain_text(self):
+        """Plain text should pass through unchanged."""
+        content = "The answer is 42."
+        assert OrchestrationLoop._strip_tags(content) == content
+
+
 class TestAntiRepetition:
     """Tests for anti-repetition tracking."""
 
@@ -169,13 +248,10 @@ class TestLoopExecution:
         mock_client = Mock()
         mock_openai_cls.return_value = mock_client
 
-        # LLM returns an answer tool call
-        answer_tc = _make_tool_call("answer", {"content": "The answer is 42"})
-        msg = _make_mock_message(
-            content="<think>I know the answer</think>",
-            tool_calls=[answer_tc],
-        )
-        response = _make_mock_response(msg)
+        # LLM returns text with <tool_call> for the answer tool
+        tc_text = _make_tool_call_text("answer", {"content": "The answer is 42"})
+        content = f"<think>I know the answer</think>\n\n{tc_text}"
+        response = _make_mock_response(content)
         mock_client.chat.completions.create.return_value = response
 
         loop = OrchestrationLoop()
@@ -188,12 +264,11 @@ class TestLoopExecution:
 
     @patch("src.orchestration.loop.OpenAI")
     def test_no_tool_calls_uses_content_as_answer(self, mock_openai_cls):
-        """When LLM returns no tool calls, content is the answer."""
+        """When LLM returns no tool_call tags, content is the answer."""
         mock_client = Mock()
         mock_openai_cls.return_value = mock_client
 
-        msg = _make_mock_message(content="The answer is simply 42.")
-        response = _make_mock_response(msg)
+        response = _make_mock_response("The answer is simply 42.")
         mock_client.chat.completions.create.return_value = response
 
         loop = OrchestrationLoop()
@@ -209,12 +284,9 @@ class TestLoopExecution:
         mock_openai_cls.return_value = mock_client
 
         # LLM always calls calculate (never answers)
-        calc_tc = _make_tool_call("calculate", {"expression": "1+1"})
-        msg = _make_mock_message(
-            content="<think>Let me calculate</think>",
-            tool_calls=[calc_tc],
-        )
-        response = _make_mock_response(msg)
+        tc_text = _make_tool_call_text("calculate", {"expression": "1+1"})
+        content = f"<think>Let me calculate</think>\n\n{tc_text}"
+        response = _make_mock_response(content)
         mock_client.chat.completions.create.return_value = response
 
         loop = OrchestrationLoop(max_steps=2)
@@ -232,20 +304,14 @@ class TestLoopExecution:
         mock_openai_cls.return_value = mock_client
 
         # Step 1: LLM calls calculate
-        calc_tc = _make_tool_call("calculate", {"expression": "3^8"})
-        calc_msg = _make_mock_message(
-            content="<think>Need to calculate 3^8</think>",
-            tool_calls=[calc_tc],
-        )
-        calc_response = _make_mock_response(calc_msg)
+        calc_tc = _make_tool_call_text("calculate", {"expression": "3^8"})
+        calc_content = f"<think>Need to calculate 3^8</think>\n\n{calc_tc}"
+        calc_response = _make_mock_response(calc_content)
 
         # Step 2: LLM returns answer
-        answer_tc = _make_tool_call("answer", {"content": "3^8 = 6561"})
-        answer_msg = _make_mock_message(
-            content="<think>Now I have the answer</think>",
-            tool_calls=[answer_tc],
-        )
-        answer_response = _make_mock_response(answer_msg)
+        answer_tc = _make_tool_call_text("answer", {"content": "3^8 = 6561"})
+        answer_content = f"<think>Now I have the answer</think>\n\n{answer_tc}"
+        answer_response = _make_mock_response(answer_content)
 
         mock_client.chat.completions.create.side_effect = [
             calc_response,
@@ -283,18 +349,55 @@ class TestLoopExecution:
         mock_client = Mock()
         mock_openai_cls.return_value = mock_client
 
-        answer_tc = _make_tool_call("answer", {"content": "42"})
-        msg = _make_mock_message(
-            content="<think>The user wants to know the answer</think>",
-            tool_calls=[answer_tc],
-        )
-        response = _make_mock_response(msg)
+        tc_text = _make_tool_call_text("answer", {"content": "42"})
+        content = f"<think>The user wants to know the answer</think>\n\n{tc_text}"
+        response = _make_mock_response(content)
         mock_client.chat.completions.create.return_value = response
 
         loop = OrchestrationLoop()
         result = loop.run("What is 42?")
 
         assert result.steps[0].reasoning == "The user wants to know the answer"
+
+    @patch("src.orchestration.loop.OpenAI")
+    def test_system_prompt_includes_tools_block(self, mock_openai_cls):
+        """System prompt sent to LLM should include <tools> block."""
+        mock_client = Mock()
+        mock_openai_cls.return_value = mock_client
+
+        # Return a direct answer so the loop runs one step
+        response = _make_mock_response("The answer is 42.")
+        mock_client.chat.completions.create.return_value = response
+
+        loop = OrchestrationLoop()
+        loop.run("What is 42?")
+
+        # Inspect the messages sent to the LLM
+        call_kwargs = mock_client.chat.completions.create.call_args
+        messages = call_kwargs.kwargs.get("messages") or call_kwargs[1].get("messages")
+        system_content = messages[0]["content"]
+
+        assert "# Tools" in system_content
+        assert "<tools>" in system_content
+        assert "</tools>" in system_content
+        assert "<tool_call>" in system_content
+        assert "answer" in system_content
+
+    @patch("src.orchestration.loop.OpenAI")
+    def test_no_tools_api_parameter(self, mock_openai_cls):
+        """LLM call should NOT include 'tools' or 'tool_choice' API params."""
+        mock_client = Mock()
+        mock_openai_cls.return_value = mock_client
+
+        response = _make_mock_response("The answer is 42.")
+        mock_client.chat.completions.create.return_value = response
+
+        loop = OrchestrationLoop()
+        loop.run("What is 42?")
+
+        call_kwargs = mock_client.chat.completions.create.call_args.kwargs
+        assert "tools" not in call_kwargs
+        assert "tool_choice" not in call_kwargs
 
 
 class TestGetTrace:
@@ -306,12 +409,9 @@ class TestGetTrace:
         mock_client = Mock()
         mock_openai_cls.return_value = mock_client
 
-        answer_tc = _make_tool_call("answer", {"content": "42"})
-        msg = _make_mock_message(
-            content="<think>thinking</think>",
-            tool_calls=[answer_tc],
-        )
-        response = _make_mock_response(msg)
+        tc_text = _make_tool_call_text("answer", {"content": "42"})
+        content = f"<think>thinking</think>\n\n{tc_text}"
+        response = _make_mock_response(content)
         mock_client.chat.completions.create.return_value = response
 
         loop = OrchestrationLoop()

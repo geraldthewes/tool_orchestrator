@@ -1,6 +1,10 @@
-"""Tests for OpenAI function-calling tool definitions."""
+"""Tests for tool definitions and Qwen3 prompt formatting."""
 
-from src.orchestration.tool_defs import build_tool_definitions, ANSWER_TOOL
+from src.orchestration.tool_defs import (
+    build_tool_definitions,
+    build_tools_prompt_block,
+    ANSWER_TOOL,
+)
 
 
 class TestBuildToolDefinitions:
@@ -105,3 +109,59 @@ class TestAnswerTool:
         assert func["name"] == "answer"
         assert "content" in func["parameters"]["properties"]
         assert "content" in func["parameters"]["required"]
+
+
+class TestBuildToolsPromptBlock:
+    """Tests for the Qwen3 ChatML <tools> prompt block."""
+
+    def test_contains_tools_xml_tags(self):
+        """Output should include <tools> and </tools> XML tags."""
+        tools = build_tool_definitions()
+        block = build_tools_prompt_block(tools)
+        assert "<tools>" in block
+        assert "</tools>" in block
+
+    def test_contains_tool_call_instruction(self):
+        """Output should include <tool_call> usage instruction."""
+        tools = build_tool_definitions()
+        block = build_tools_prompt_block(tools)
+        assert "<tool_call>" in block
+        assert "</tool_call>" in block
+        assert '"name"' in block
+
+    def test_contains_tools_header(self):
+        """Output should include the '# Tools' section header."""
+        tools = build_tool_definitions()
+        block = build_tools_prompt_block(tools)
+        assert "# Tools" in block
+
+    def test_each_tool_is_json_line(self):
+        """Each tool should appear as a JSON line inside <tools> block."""
+        tools = build_tool_definitions()
+        block = build_tools_prompt_block(tools)
+
+        # Extract lines between <tools> and </tools>
+        in_block = False
+        tool_lines = []
+        for line in block.splitlines():
+            if line.strip() == "<tools>":
+                in_block = True
+                continue
+            if line.strip() == "</tools>":
+                break
+            if in_block:
+                tool_lines.append(line)
+
+        assert len(tool_lines) == len(tools)
+        for line in tool_lines:
+            import json
+
+            parsed = json.loads(line)
+            assert parsed["type"] == "function"
+            assert "function" in parsed
+
+    def test_empty_tools_list(self):
+        """Should produce valid block even with no tools."""
+        block = build_tools_prompt_block([])
+        assert "<tools>" in block
+        assert "</tools>" in block

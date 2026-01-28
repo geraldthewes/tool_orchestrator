@@ -63,30 +63,21 @@ class TestToolResult:
         assert "timeout" in result.result.lower()
 
 
-def _make_tool_call(name: str, arguments: dict) -> Mock:
-    """Create a mock tool call."""
-    tc = Mock()
-    tc.function = Mock()
-    tc.function.name = name
-    tc.function.arguments = json.dumps(arguments)
-    return tc
+def _make_tool_call_text(name: str, arguments: dict) -> str:
+    """Build a <tool_call> XML block for mock LLM output."""
+    return (
+        "<tool_call>\n"
+        + json.dumps({"name": name, "arguments": arguments})
+        + "\n</tool_call>"
+    )
 
 
-def _make_mock_message(
-    content: str = "",
-    tool_calls: list | None = None,
-) -> Mock:
-    """Create a mock chat completion message."""
+def _make_mock_response(content: str, usage: Mock | None = None) -> Mock:
+    """Create a mock chat completion response returning plain text."""
     msg = Mock()
     msg.content = content
-    msg.tool_calls = tool_calls
-    return msg
-
-
-def _make_mock_response(message: Mock, usage: Mock | None = None) -> Mock:
-    """Create a mock chat completion response."""
     response = Mock()
-    response.choices = [Mock(message=message)]
+    response.choices = [Mock(message=msg)]
     response.usage = usage
     return response
 
@@ -156,12 +147,9 @@ class TestOrchestrator:
         mock_client = Mock()
         mock_openai_cls.return_value = mock_client
 
-        answer_tc = _make_tool_call("answer", {"content": "The answer is 42"})
-        msg = _make_mock_message(
-            content="<think>Simple question</think>",
-            tool_calls=[answer_tc],
-        )
-        response = _make_mock_response(msg)
+        tc_text = _make_tool_call_text("answer", {"content": "The answer is 42"})
+        content = f"<think>Simple question</think>\n\n{tc_text}"
+        response = _make_mock_response(content)
         mock_client.chat.completions.create.return_value = response
 
         orchestrator = ToolOrchestrator()
@@ -188,20 +176,14 @@ class TestOrchestrator:
         mock_openai_cls.return_value = mock_client
 
         # Step 1: calculate
-        calc_tc = _make_tool_call("calculate", {"expression": "6 * 7"})
-        calc_msg = _make_mock_message(
-            content="<think>I need to calculate</think>",
-            tool_calls=[calc_tc],
-        )
-        calc_response = _make_mock_response(calc_msg)
+        calc_tc = _make_tool_call_text("calculate", {"expression": "6 * 7"})
+        calc_content = f"<think>I need to calculate</think>\n\n{calc_tc}"
+        calc_response = _make_mock_response(calc_content)
 
         # Step 2: answer
-        answer_tc = _make_tool_call("answer", {"content": "The answer is 42"})
-        answer_msg = _make_mock_message(
-            content="<think>Now I have the answer</think>",
-            tool_calls=[answer_tc],
-        )
-        answer_response = _make_mock_response(answer_msg)
+        answer_tc = _make_tool_call_text("answer", {"content": "The answer is 42"})
+        answer_content = f"<think>Now I have the answer</think>\n\n{answer_tc}"
+        answer_response = _make_mock_response(answer_content)
 
         mock_client.chat.completions.create.side_effect = [
             calc_response,
@@ -222,8 +204,7 @@ class TestOrchestrator:
         mock_client = Mock()
         mock_openai_cls.return_value = mock_client
 
-        msg = _make_mock_message(content="Direct answer")
-        response = _make_mock_response(msg)
+        response = _make_mock_response("Direct answer")
         mock_client.chat.completions.create.return_value = response
 
         orchestrator = ToolOrchestrator()

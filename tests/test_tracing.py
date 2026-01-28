@@ -322,15 +322,14 @@ class TestOrchestratorTracingIntegration:
         mock_client = Mock()
         mock_openai_cls.return_value = mock_client
 
-        # Return an answer tool call
-        tc = Mock()
-        tc.function = Mock()
-        tc.function.name = "answer"
-        tc.function.arguments = json.dumps({"content": "The answer is 42."})
+        # Return text with <tool_call> XML for the answer tool
+        tc_json = json.dumps(
+            {"name": "answer", "arguments": {"content": "The answer is 42."}}
+        )
+        content = f"<think>Simple</think>\n\n<tool_call>\n{tc_json}\n</tool_call>"
 
         msg = Mock()
-        msg.content = ""
-        msg.tool_calls = [tc]
+        msg.content = content
 
         response = Mock()
         response.choices = [Mock(message=msg)]
@@ -355,14 +354,12 @@ class TestOrchestratorTracingIntegration:
         mock_client = Mock()
         mock_openai_cls.return_value = mock_client
 
-        tc = Mock()
-        tc.function = Mock()
-        tc.function.name = "answer"
-        tc.function.arguments = json.dumps({"content": "Done."})
+        # Return text with <tool_call> XML for the answer tool
+        tc_json = json.dumps({"name": "answer", "arguments": {"content": "Done."}})
+        content = f"<tool_call>\n{tc_json}\n</tool_call>"
 
         msg = Mock()
-        msg.content = ""
-        msg.tool_calls = [tc]
+        msg.content = content
 
         response = Mock()
         response.choices = [Mock(message=msg)]

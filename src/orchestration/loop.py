@@ -2,9 +2,13 @@
 Core orchestration loop matching NVIDIA's ToolOrchestra reference architecture.
 
 Implements stateless prompt reconstruction with structured observation buffers,
-OpenAI function-calling format, and anti-repetition guards. Each turn
-reconstructs fresh [system, user] messages from the buffers rather than
-appending to a growing conversation history.
+Qwen3 ChatML tool format (``<tools>``/``<tool_call>`` XML tags), and
+anti-repetition guards.  Each turn reconstructs fresh [system, user] messages
+from the buffers rather than appending to a growing conversation history.
+
+The model outputs ``<tool_call>`` XML in its text response; we parse that
+rather than relying on the OpenAI ``tools`` API parameter which requires
+vLLM ``--enable-auto-tool-choice``.
 """
 
 import json
@@ -14,7 +18,6 @@ from dataclasses import dataclass, field
 from typing import Optional
 
 from openai import OpenAI
-from openai.types.chat import ChatCompletionMessage
 
 from ..config import config
 from ..config_loader import get_delegates_from_app_config
@@ -24,7 +27,7 @@ from ..tools.registry import ToolDefinition, ToolRegistry
 from ..tools.llm_delegate import call_delegate, format_result_for_llm
 from ..tracing import TracingContext
 from .buffers import ObservationBuffers, TokenBudgets
-from .tool_defs import build_tool_definitions
+from .tool_defs import build_tool_definitions, build_tools_prompt_block
 
 logger = logging.getLogger(__name__)
 
@@ -59,15 +62,19 @@ class OrchestrationResult:
 
 class OrchestrationLoop:
     """
-    Custom orchestration loop using OpenAI function-calling.
+    Custom orchestration loop using Qwen3 ChatML tool format.
+
+    Tools are embedded in the system prompt as ``<tools>`` XML, and the
+    model outputs ``<tool_call>`` XML in its text response.  This avoids
+    the vLLM ``--enable-auto-tool-choice`` requirement.
 
     Per-step flow:
-        1. Build fresh [system, user] messages from observation buffers
-        2. Determine excluded tools (anti-repetition)
-        3. Build OpenAI function-calling tool definitions
-        4. Call LLM via OpenAI SDK with ``tools`` parameter
-        5. Parse response: extract <think> block, handle tool_calls
-        6. If ``answer`` tool: extract final answer, break
+        1. Determine excluded tools (anti-repetition)
+        2. Build tool definitions and system prompt with ``<tools>`` block
+        3. Build fresh [system, user] messages from observation buffers
+        4. Call LLM via OpenAI SDK (plain text completion, no ``tools`` param)
+        5. Parse response: extract ``<think>`` block, parse ``<tool_call>`` XML
+        6. If ``answer`` tool: extract final answer, return
         7. If other tool: execute, add observation to buffers
         8. Update repetition tracking
     """
@@ -154,21 +161,22 @@ class OrchestrationLoop:
         for step_num in range(1, self.max_steps + 1):
             step = OrchestrationStep(step_number=step_num)
 
-            # 1. Build fresh messages from buffers
-            messages = self._build_messages(query)
-
-            # 2. Get excluded tools (anti-repetition)
+            # 1. Get excluded tools (anti-repetition)
             excluded = self._get_excluded_tools()
 
-            # 3. Build tool definitions
-            tools = build_tool_definitions(
+            # 2. Build tool definitions and system prompt with <tools> block
+            tool_defs = build_tool_definitions(
                 delegates_config=self.delegates_config,
                 exclude_tools=excluded,
             )
+            system_prompt = SYSTEM_PROMPT + build_tools_prompt_block(tool_defs)
 
-            # 4. Call LLM
-            response_message = self._call_llm(messages, tools, step_num)
-            if response_message is None:
+            # 3. Build fresh messages from buffers
+            messages = self._build_messages(query, system_prompt)
+
+            # 4. Call LLM (plain text completion, no tools API param)
+            content = self._call_llm(messages, step_num)
+            if content is None:
                 step.reasoning = "LLM call failed"
                 step.is_final = True
                 step.final_answer = "Error: orchestration LLM call failed."
@@ -181,14 +189,13 @@ class OrchestrationLoop:
                 )
 
             # 5. Extract <think> block as reasoning
-            content = response_message.content or ""
             step.reasoning = self._extract_think_block(content)
 
-            # 6. Handle tool calls
-            tool_calls = response_message.tool_calls
-            if not tool_calls:
+            # 6. Parse <tool_call> XML from text
+            tool_call = self._parse_tool_call(content)
+            if tool_call is None:
                 # No tool call: treat content as the answer
-                clean_content = self._strip_think_block(content).strip()
+                clean_content = self._strip_tags(content).strip()
                 step.is_final = True
                 step.final_answer = clean_content or content
                 step.action = "answer"
@@ -200,15 +207,7 @@ class OrchestrationLoop:
                     tools_used=self._unique_tools_used(),
                 )
 
-            # Process the first tool call (always function-type from vLLM)
-            tc = tool_calls[0]
-            func = tc.function  # type: ignore[union-attr]
-            tool_name = func.name
-            try:
-                tool_args = json.loads(func.arguments)
-            except (json.JSONDecodeError, TypeError):
-                tool_args = {"raw": func.arguments}
-
+            tool_name, tool_args = tool_call
             step.action = tool_name
             step.action_input = tool_args
 
@@ -252,20 +251,29 @@ class OrchestrationLoop:
             tools_used=self._unique_tools_used(),
         )
 
-    def _build_messages(self, query: str) -> list[dict]:
+    def _build_messages(
+        self, query: str, system_prompt: Optional[str] = None
+    ) -> list[dict]:
         """
         Build fresh [system, user] messages from observation buffers.
 
         This is stateless prompt reconstruction: each turn starts from
-        the system prompt + user query + accumulated observations,
-        rather than appending to a growing conversation history.
+        the system prompt (with ``<tools>`` block) + user query +
+        accumulated observations, rather than appending to a growing
+        conversation history.
+
+        Args:
+            query: The user's question.
+            system_prompt: Full system prompt including tool definitions.
+                Falls back to the base SYSTEM_PROMPT if not provided.
         """
-        system_msg = {"role": "system", "content": SYSTEM_PROMPT}
+        prompt = system_prompt if system_prompt is not None else SYSTEM_PROMPT
+        system_msg = {"role": "system", "content": prompt}
 
         # Build user message with observations context
         if self._buffers.has_observations:
             context = self._buffers.build_context_string()
-            user_content = f"{query}\n\n" f"# Previous observations\n{context}"
+            user_content = f"{query}\n\n# Previous observations\n{context}"
         else:
             user_content = query
 
@@ -299,27 +307,27 @@ class OrchestrationLoop:
     def _call_llm(
         self,
         messages: list[dict],
-        tools: list[dict],
         step_num: int,
-    ) -> Optional[ChatCompletionMessage]:
+    ) -> Optional[str]:
         """
         Call the orchestrator LLM via the OpenAI SDK.
 
+        Tool definitions are already embedded in the system prompt as
+        ``<tools>`` XML; we do not pass ``tools`` or ``tool_choice``
+        API parameters.
+
         Args:
-            messages: Chat messages.
-            tools: OpenAI function-calling tool definitions.
+            messages: Chat messages (system prompt includes tools block).
             step_num: Current step number (for tracing).
 
         Returns:
-            The response message object, or None on failure.
+            The response text content, or None on failure.
         """
         id_prefix = f"[{self.execution_id}] " if self.execution_id else ""
 
         create_kwargs: dict = {
             "model": self._model,
             "messages": messages,
-            "tools": tools,
-            "tool_choice": "auto",
             "temperature": config.orchestrator.temperature,
             "max_tokens": config.max_tokens,
         }
@@ -339,14 +347,14 @@ class OrchestrationLoop:
         try:
             logger.debug("%sStep %d: calling LLM", id_prefix, step_num)
             response = self._client.chat.completions.create(**create_kwargs)
-            return response.choices[0].message
+            return response.choices[0].message.content or ""
         except Exception as e:
             logger.error("%sLLM call failed at step %d: %s", id_prefix, step_num, e)
             return None
 
     def _call_llm_with_tracing(
         self, create_kwargs: dict, step_num: int, id_prefix: str
-    ) -> Optional[ChatCompletionMessage]:
+    ) -> Optional[str]:
         """Call LLM with Langfuse generation tracing."""
         if self.tracing_context is None:
             return None
@@ -362,17 +370,9 @@ class OrchestrationLoop:
             try:
                 logger.debug("%sStep %d: calling LLM (traced)", id_prefix, step_num)
                 response = self._client.chat.completions.create(**create_kwargs)
-                msg = response.choices[0].message
+                content = response.choices[0].message.content or ""
 
-                # Record output
-                output_text = msg.content or ""
-                if msg.tool_calls:
-                    tc_summary = [
-                        f"{tc.function.name}({tc.function.arguments})"
-                        for tc in msg.tool_calls
-                    ]
-                    output_text += f" [tool_calls: {', '.join(tc_summary)}]"
-                gen.set_output(output_text[:2000])
+                gen.set_output(content[:2000])
 
                 # Record usage if available
                 if response.usage:
@@ -382,7 +382,7 @@ class OrchestrationLoop:
                         total_tokens=response.usage.total_tokens,
                     )
 
-                return msg
+                return content
             except Exception as e:
                 logger.error("%sLLM call failed at step %d: %s", id_prefix, step_num, e)
                 gen.set_status("error")
@@ -557,6 +557,44 @@ class OrchestrationLoop:
     def _strip_think_block(content: str) -> str:
         """Remove <think>...</think> tags from content."""
         return re.sub(r"<think>.*?</think>", "", content, flags=re.DOTALL)
+
+    @staticmethod
+    def _parse_tool_call(content: str) -> Optional[tuple[str, dict]]:
+        """
+        Parse a ``<tool_call>`` XML block from model output.
+
+        The Qwen3 ChatML format outputs tool calls as::
+
+            <tool_call>
+            {"name": "web_search", "arguments": {"query": "test"}}
+            </tool_call>
+
+        Returns:
+            Tuple of (tool_name, tool_args) or None if no tool call found.
+        """
+        match = re.search(r"<tool_call>\s*(.*?)\s*</tool_call>", content, re.DOTALL)
+        if not match:
+            return None
+        try:
+            data = json.loads(match.group(1))
+            name = data.get("name", "")
+            args = data.get("arguments", {})
+            if isinstance(args, str):
+                args = json.loads(args)
+            if not name:
+                return None
+            return (name, args)
+        except (json.JSONDecodeError, TypeError):
+            logger.warning("Failed to parse <tool_call> JSON: %s", match.group(1)[:200])
+            return None
+
+    @staticmethod
+    def _strip_tags(content: str) -> str:
+        """Remove ``<think>`` and ``<tool_call>`` blocks from content."""
+        result = re.sub(r"<think>.*?</think>", "", content, flags=re.DOTALL)
+        result = re.sub(r"<tool_call>.*?</tool_call>", "", result, flags=re.DOTALL)
+        result = re.sub(r"<message>(.*?)</message>", r"\1", result, flags=re.DOTALL)
+        return result
 
     def _synthesize_forced_answer(self) -> str:
         """Synthesize a best-effort answer from accumulated observations."""

@@ -1,10 +1,13 @@
 """
-OpenAI function-calling tool definitions.
+Tool definitions for the orchestration loop.
 
 Converts ToolRegistry entries and delegate configurations into
-the OpenAI ``tools`` format for vLLM native function calling.
+OpenAI-style JSON tool definitions, and formats them into the
+Qwen3 ChatML ``<tools>`` prompt block that Nemotron-Orchestrator-8B
+was trained to understand.
 """
 
+import json
 import logging
 from typing import Optional
 
@@ -128,3 +131,43 @@ def build_tool_definitions(
     tools.append(ANSWER_TOOL)
 
     return tools
+
+
+def build_tools_prompt_block(tools: list[dict]) -> str:
+    """
+    Format tool definitions into the Qwen3 ChatML ``<tools>`` prompt block.
+
+    This produces the exact format that the Qwen3 chat template generates
+    when tools are passed, allowing us to embed tool descriptions directly
+    in the system prompt instead of using the OpenAI ``tools`` API parameter.
+
+    Nemotron-Orchestrator-8B was RL-trained with this format and expects
+    tools described in ``<tools>`` XML tags with one JSON object per line.
+
+    Args:
+        tools: List of OpenAI-format tool definitions (from ``build_tool_definitions``).
+
+    Returns:
+        Formatted prompt block string to append to the system prompt.
+    """
+    lines = [
+        "",
+        "# Tools",
+        "",
+        "You may call one or more functions to assist with the user query.",
+        "",
+        "You are provided with function signatures within <tools></tools> XML tags:",
+        "<tools>",
+    ]
+    for tool in tools:
+        lines.append(json.dumps(tool, separators=(",", ":")))
+    lines.append("</tools>")
+    lines.append("")
+    lines.append(
+        "For each function call, return a json object with function name and arguments "
+        "within <tool_call></tool_call> XML tags:"
+    )
+    lines.append("<tool_call>")
+    lines.append('{"name": <function-name>, "arguments": <args-json-object>}')
+    lines.append("</tool_call>")
+    return "\n".join(lines)
