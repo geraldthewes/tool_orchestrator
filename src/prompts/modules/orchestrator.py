@@ -7,6 +7,7 @@ with adapters for existing ToolOrchestra tools.
 
 import inspect
 import logging
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional, Callable, Any
@@ -57,6 +58,7 @@ def create_dspy_tool(
     handler: Callable[[dict], Any],
     formatter: Callable[[Any], str],
     tracing_context: Optional[TracingContext] = None,
+    tracing_context_getter: Optional[Callable[[], Optional[TracingContext]]] = None,
 ) -> Callable:
     """
     Create a DSPy-compatible tool function from handler and formatter.
@@ -68,6 +70,9 @@ def create_dspy_tool(
         handler: Function that executes the tool
         formatter: Function that formats the result
         tracing_context: Optional tracing context for observability
+        tracing_context_getter: Optional callable that returns the active tracing context.
+            When provided, this is called at tool execution time to get the current
+            context, enabling per-call tracing during DSPy optimization.
 
     Returns:
         DSPy-compatible tool function with explicit parameter signature
@@ -80,8 +85,11 @@ def create_dspy_tool(
             expected_params = ", ".join(parameters.keys())
             return f"Error: Invalid input format. Expected JSON with parameters: {expected_params}"
 
-        if tracing_context:
-            with tracing_context.span(
+        # Get tracing context - prefer getter for per-call tracing, fallback to static context
+        ctx = tracing_context_getter() if tracing_context_getter else tracing_context
+
+        if ctx:
+            with ctx.span(
                 name=f"tool:{name}",
                 input=kwargs,
             ) as span:
@@ -152,6 +160,7 @@ def create_delegate_tool(
     tool_name: str,
     delegates_config: DelegatesConfiguration,
     tracing_context: Optional[TracingContext] = None,
+    tracing_context_getter: Optional[Callable[[], Optional[TracingContext]]] = None,
     parameters: Optional[dict[str, str]] = None,
 ) -> Callable:
     """
@@ -164,6 +173,9 @@ def create_delegate_tool(
         tool_name: Tool name (e.g., "ask_reasoner")
         delegates_config: Delegates configuration
         tracing_context: Optional tracing context for observability
+        tracing_context_getter: Optional callable that returns the active tracing context.
+            When provided, this is called at tool execution time to get the current
+            context, enabling per-call tracing during DSPy optimization.
         parameters: Dict mapping parameter names to descriptions. Defaults to
             {"query": "the question or task to delegate"}
 
@@ -199,8 +211,11 @@ def create_delegate_tool(
         if tokens > delegate.capabilities.max_output_tokens:
             tokens = delegate.capabilities.max_output_tokens
 
-        if tracing_context:
-            with tracing_context.span(
+        # Get tracing context - prefer getter for per-call tracing, fallback to static context
+        ctx = tracing_context_getter() if tracing_context_getter else tracing_context
+
+        if ctx:
+            with ctx.span(
                 name=f"tool:{tool_name}",
                 input={
                     "prompt": prompt[:500] if len(prompt) > 500 else prompt,
@@ -277,6 +292,9 @@ class ToolOrchestratorModule(dspy.Module):
         delegates_config: Optional[DelegatesConfiguration] = None,
         execution_id: Optional[str] = None,
         tracing_context: Optional[TracingContext] = None,
+        trace_per_call: bool = False,
+        trace_name: str = "orchestration_eval",
+        trace_metadata: Optional[dict] = None,
     ):
         """
         Initialize the orchestrator module.
@@ -286,7 +304,13 @@ class ToolOrchestratorModule(dspy.Module):
             verbose: Enable verbose logging
             delegates_config: Configuration for delegate LLMs
             execution_id: Optional ID for correlating logs
-            tracing_context: Optional tracing context for observability
+            tracing_context: Optional tracing context for observability (used when
+                trace_per_call=False, e.g., for API request tracing)
+            trace_per_call: If True, create a separate Langfuse trace for each
+                forward() call. Useful for DSPy optimization where each example
+                should have its own trace. Default False preserves existing behavior.
+            trace_name: Name for per-call traces when trace_per_call=True
+            trace_metadata: Additional metadata to include in per-call traces
         """
         super().__init__()
 
@@ -294,16 +318,24 @@ class ToolOrchestratorModule(dspy.Module):
         self.verbose = verbose
         self.execution_id = execution_id
         self.tracing_context = tracing_context
+        self.trace_per_call = trace_per_call
+        self.trace_name = trace_name
+        self.trace_metadata = trace_metadata or {}
         self.steps: list[OrchestrationStep] = []
+
+        # Active tracing context for current forward() call
+        # This is set dynamically when trace_per_call=True
+        self._active_tracing_context: Optional[TracingContext] = None
 
         # Load delegates configuration
         self.delegates_config = delegates_config or get_delegates_from_app_config()
 
-        # Build DSPy tools list
+        # Build DSPy tools list (uses _get_active_tracing_context for deferred resolution)
         self._tools = self._build_dspy_tools()
 
         # Configure adapter for native function calling (Nemotron compatibility)
         # Use NemotronJSONAdapter to handle "final" wrapper in responses
+        # Note: adapter uses static tracing_context since it's not per-call
         dspy.settings.adapter = NemotronJSONAdapter(
             use_native_function_calling=True,
             tracing_context=self.tracing_context,
@@ -319,11 +351,28 @@ class ToolOrchestratorModule(dspy.Module):
         # Load optimized checkpoint if configured
         self._load_optimized_checkpoint()
 
+    def _get_active_tracing_context(self) -> Optional[TracingContext]:
+        """
+        Get the active tracing context for the current forward() call.
+
+        When trace_per_call=True, this returns the per-call context created
+        in forward(). Otherwise, it returns the shared tracing_context passed
+        to __init__ (or None if not provided).
+
+        This method is used as a getter by tools to defer context resolution
+        until tool execution time, enabling proper tracing in per-call mode.
+
+        Returns:
+            The active TracingContext, or None if tracing is not enabled.
+        """
+        return self._active_tracing_context or self.tracing_context
+
     def _build_dspy_tools(self) -> list[Callable]:
         """Build list of DSPy-compatible tool functions."""
         tools = []
 
         # Add tools from registry (static tools)
+        # Use tracing_context_getter for deferred resolution to support per-call tracing
         for name, tool_def in ToolRegistry.all_tools().items():
             dspy_tool = create_dspy_tool(
                 name=name,
@@ -331,12 +380,13 @@ class ToolOrchestratorModule(dspy.Module):
                 parameters=tool_def.parameters,
                 handler=tool_def.handler,
                 formatter=tool_def.formatter,
-                tracing_context=self.tracing_context,
+                tracing_context_getter=self._get_active_tracing_context,
             )
             tools.append(dspy_tool)
             logger.debug(f"Registered DSPy tool: {name}")
 
         # Add delegate tools
+        # Use tracing_context_getter for deferred resolution to support per-call tracing
         for role, delegate in self.delegates_config.delegates.items():
             delegate_tool = create_delegate_tool(
                 role=role,
@@ -344,7 +394,7 @@ class ToolOrchestratorModule(dspy.Module):
                 description=delegate.description,
                 tool_name=delegate.tool_name,
                 delegates_config=self.delegates_config,
-                tracing_context=self.tracing_context,
+                tracing_context_getter=self._get_active_tracing_context,
             )
             tools.append(delegate_tool)
             logger.debug(f"Registered DSPy delegate tool: {delegate.tool_name}")
@@ -374,68 +424,124 @@ class ToolOrchestratorModule(dspy.Module):
         """
         Run orchestration for a question using DSPy ReAct.
 
+        When trace_per_call=True, creates a fresh Langfuse trace for this call,
+        enabling separate traces for each example during DSPy optimization.
+
         Args:
             question: The user's question or task
 
         Returns:
-            The final answer string
+            dspy.Prediction with answer and tools fields
         """
         self.steps = []
         logger.debug(f"Starting orchestration for: {question}")
 
-        # Always use the orchestrator LM for ReAct tool-calling
-        # This ensures the correct model is used even during DSPy optimization
-        # (where a teacher LM may be set in dspy.settings.lm for prompt generation)
-        orchestrator_lm = get_orchestrator_lm()
-        if self.tracing_context:
-            logger.debug(f"Tracing context available: _trace_id={self.tracing_context._trace_id}, _enabled={self.tracing_context._enabled}")
-            orchestrator_lm = TracedLM(
-                orchestrator_lm, self.tracing_context, "orchestrator"
+        # Per-call tracing: create and manage a trace for this specific forward() call
+        local_tracing_context: Optional[TracingContext] = None
+        if self.trace_per_call:
+            # Generate unique execution_id using timestamp and question hash
+            execution_id = (
+                f"eval-{int(time.time() * 1000)}-{abs(hash(question)) % 10000}"
+            )
+            local_tracing_context = TracingContext(execution_id=execution_id)
+            local_tracing_context.start_trace(
+                name=self.trace_name,
+                query=question[:200] if len(question) > 200 else question,
+                metadata={
+                    **self.trace_metadata,
+                    "question": question[:500] if len(question) > 500 else question,
+                },
+            )
+            # Set as active context so tools use this trace
+            self._active_tracing_context = local_tracing_context
+            logger.debug(
+                f"Created per-call trace: execution_id={execution_id}, "
+                f"trace_id={local_tracing_context._trace_id}"
             )
         else:
-            logger.debug("No tracing context available in forward()")
+            # Use shared tracing context (original behavior)
+            self._active_tracing_context = self.tracing_context
 
-        # Set query context for adapter logging
-        query_token = set_current_query(question)
         try:
-            with dspy.context(lm=orchestrator_lm):
-                result = self.react(question=question)
+            # Always use the orchestrator LM for ReAct tool-calling
+            # This ensures the correct model is used even during DSPy optimization
+            # (where a teacher LM may be set in dspy.settings.lm for prompt generation)
+            orchestrator_lm = get_orchestrator_lm()
 
-            # Extract steps from trajectory
-            if hasattr(result, "trajectory") and result.trajectory:
-                self.steps = self._extract_steps_from_trajectory(result.trajectory)
-                # Set final_answer on the last step if it's marked as final
-                if self.steps and self.steps[-1].is_final:
-                    self.steps[-1].final_answer = (
-                        result.answer if hasattr(result, "answer") else None
-                    )
+            # Get the active context for tracing
+            active_ctx = self._get_active_tracing_context()
+            if active_ctx:
+                logger.debug(
+                    f"Tracing context available: _trace_id={active_ctx._trace_id}, "
+                    f"_enabled={active_ctx._enabled}"
+                )
+                orchestrator_lm = TracedLM(orchestrator_lm, active_ctx, "orchestrator")
+            else:
+                logger.debug("No tracing context available in forward()")
 
-            # Extract answer from result
-            answer = result.answer if hasattr(result, "answer") else str(result)
+            # Set query context for adapter logging
+            query_token = set_current_query(question)
+            try:
+                with dspy.context(lm=orchestrator_lm):
+                    result = self.react(question=question)
 
-            # Extract tools used from steps (excluding "finish" action)
-            tools_used = [
-                step.action
-                for step in self.steps
-                if step.action and step.action != "finish"
-            ]
+                # Extract steps from trajectory
+                if hasattr(result, "trajectory") and result.trajectory:
+                    self.steps = self._extract_steps_from_trajectory(result.trajectory)
+                    # Set final_answer on the last step if it's marked as final
+                    if self.steps and self.steps[-1].is_final:
+                        self.steps[-1].final_answer = (
+                            result.answer if hasattr(result, "answer") else None
+                        )
 
-            # Log completion
-            logger.info("Completed orchestration")
-            self._log_trace_summary()
+                # Extract answer from result
+                answer = result.answer if hasattr(result, "answer") else str(result)
 
-            # Return dspy.Prediction with both answer and tools for metric evaluation
-            return dspy.Prediction(answer=answer, tools=tools_used)
+                # Extract tools used from steps (excluding "finish" action)
+                tools_used = [
+                    step.action
+                    for step in self.steps
+                    if step.action and step.action != "finish"
+                ]
 
-        except Exception as e:
-            logger.error(
-                f"Orchestration failed: {e} "
-                f"(endpoint={config.orchestrator.base_url}, model={config.orchestrator.model})"
-            )
-            return dspy.Prediction(answer=f"Error during orchestration: {e}", tools=[])
+                # Log completion
+                logger.info("Completed orchestration")
+                self._log_trace_summary()
+
+                # Return dspy.Prediction with both answer and tools for metric evaluation
+                return dspy.Prediction(answer=answer, tools=tools_used)
+
+            except Exception as e:
+                logger.error(
+                    f"Orchestration failed: {e} "
+                    f"(endpoint={config.orchestrator.base_url}, model={config.orchestrator.model})"
+                )
+                return dspy.Prediction(
+                    answer=f"Error during orchestration: {e}", tools=[]
+                )
+            finally:
+                # Always reset query context
+                reset_current_query(query_token)
+
         finally:
-            # Always reset query context
-            reset_current_query(query_token)
+            # End per-call trace if we created one
+            if local_tracing_context:
+                # Get the answer for the trace output
+                answer_for_trace = ""
+                if self.steps:
+                    final_step = self.steps[-1]
+                    if final_step.final_answer:
+                        answer_for_trace = final_step.final_answer[:500]
+                local_tracing_context.end_trace(
+                    output=answer_for_trace,
+                    status="completed",
+                    metadata={"steps_taken": len(self.steps)},
+                )
+                logger.debug(
+                    f"Ended per-call trace: trace_id={local_tracing_context._trace_id}"
+                )
+            # Clear the active context
+            self._active_tracing_context = None
 
     def run(self, query: str) -> str:
         """

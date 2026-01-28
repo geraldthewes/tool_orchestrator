@@ -123,7 +123,8 @@ def parse_args():
         help="Disable checkpointing",
     )
     parser.add_argument(
-        "-v", "--verbose",
+        "-v",
+        "--verbose",
         action="store_true",
         help="Enable verbose logging",
     )
@@ -169,10 +170,14 @@ def optimize_orchestrator_module(
             logger.info("No checkpoint found to resume from, starting fresh")
 
     if dry_run:
-        logger.info(f"[DRY RUN] Would optimize orchestrator module with {len(examples)} examples")
+        logger.info(
+            f"[DRY RUN] Would optimize orchestrator module with {len(examples)} examples"
+        )
         logger.info(f"[DRY RUN] Would save to {output_path / 'orchestrator.json'}")
         if checkpoint_dir:
-            logger.info(f"[DRY RUN] Checkpoints would be saved to {checkpoint_dir / 'orchestrator'}")
+            logger.info(
+                f"[DRY RUN] Checkpoints would be saved to {checkpoint_dir / 'orchestrator'}"
+            )
         if resume_from:
             logger.info(f"[DRY RUN] Would resume from {resume_from}")
         return output_path / "orchestrator.json"
@@ -182,13 +187,18 @@ def optimize_orchestrator_module(
     optimizer.resume_from = resume_from
 
     logger.info("Optimizing orchestrator module...")
-    # Create tracing context for observability during optimization
-    # Use unique execution_id per run to ensure new trace is created
+
+    # Create teacher LM with its own trace for observability
+    # The teacher trace captures prompt generation during optimization
     import time as _time
-    execution_id = f"optimization-orchestrator-{int(_time.time())}"
-    tracing_context = TracingContext(execution_id=execution_id)
-    tracing_context.start_trace(name="dspy_optimization", metadata={"module": "orchestrator"})
-    logger.debug(f"Started trace with ID: {tracing_context._trace_id}")
+
+    teacher_execution_id = f"optimization-teacher-{int(_time.time())}"
+    teacher_tracing_context = TracingContext(execution_id=teacher_execution_id)
+    teacher_tracing_context.start_trace(
+        name="optimization_teacher",
+        metadata={"module": "orchestrator", "role": "teacher"},
+    )
+    logger.debug(f"Started teacher trace with ID: {teacher_tracing_context._trace_id}")
 
     try:
         # Create teacher LM and wrap with tracing
@@ -197,14 +207,26 @@ def optimize_orchestrator_module(
             base_url=optimizer.teacher_base_url or None,
             model=optimizer.teacher_model or None,
         )
-        traced_teacher_lm = TracedLM(teacher_lm, tracing_context, name="teacher")
+        traced_teacher_lm = TracedLM(
+            teacher_lm, teacher_tracing_context, name="teacher"
+        )
 
-        module = ToolOrchestratorModule(tracing_context=tracing_context)
+        # Create module with per-call tracing enabled
+        # This creates a separate Langfuse trace for each training example evaluation,
+        # instead of nesting all observations under a single trace
+        module = ToolOrchestratorModule(
+            trace_per_call=True,
+            trace_name="orchestration_eval",
+            trace_metadata={
+                "optimization_run": True,
+                "module": "orchestrator",
+            },
+        )
         optimized = optimizer.optimize_orchestrator(
             module, trainset=trainset, devset=devset, teacher_lm=traced_teacher_lm
         )
     finally:
-        tracing_context.end_trace(status="completed")
+        teacher_tracing_context.end_trace(status="completed")
 
     save_path = output_path / "orchestrator.json"
     PromptOptimizer.save(optimized, str(save_path))
@@ -244,10 +266,14 @@ def optimize_router_module(
             logger.info("No checkpoint found to resume from, starting fresh")
 
     if dry_run:
-        logger.info(f"[DRY RUN] Would optimize router module with {len(examples)} examples")
+        logger.info(
+            f"[DRY RUN] Would optimize router module with {len(examples)} examples"
+        )
         logger.info(f"[DRY RUN] Would save to {output_path / 'router.json'}")
         if checkpoint_dir:
-            logger.info(f"[DRY RUN] Checkpoints would be saved to {checkpoint_dir / 'router'}")
+            logger.info(
+                f"[DRY RUN] Checkpoints would be saved to {checkpoint_dir / 'router'}"
+            )
         if resume_from:
             logger.info(f"[DRY RUN] Would resume from {resume_from}")
         return output_path / "router.json"
