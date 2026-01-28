@@ -388,9 +388,12 @@ class ToolOrchestratorModule(dspy.Module):
         # (where a teacher LM may be set in dspy.settings.lm for prompt generation)
         orchestrator_lm = get_orchestrator_lm()
         if self.tracing_context:
+            logger.debug(f"Tracing context available: _trace_id={self.tracing_context._trace_id}, _enabled={self.tracing_context._enabled}")
             orchestrator_lm = TracedLM(
                 orchestrator_lm, self.tracing_context, "orchestrator"
             )
+        else:
+            logger.debug("No tracing context available in forward()")
 
         # Set query context for adapter logging
         query_token = set_current_query(question)

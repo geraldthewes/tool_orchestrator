@@ -40,6 +40,8 @@ from src.prompts.optimization import (
     get_train_dev_split,
 )
 from src.prompts.modules import QueryRouterModule, ToolOrchestratorModule
+from src.prompts.adapters import get_teacher_lm
+from src.prompts.adapters.lm_factory import TracedLM
 from src.config import config
 from src.tracing import init_tracing_client, shutdown_tracing, TracingContext
 
@@ -181,13 +183,25 @@ def optimize_orchestrator_module(
 
     logger.info("Optimizing orchestrator module...")
     # Create tracing context for observability during optimization
-    tracing_context = TracingContext(execution_id="optimization-orchestrator")
+    # Use unique execution_id per run to ensure new trace is created
+    import time as _time
+    execution_id = f"optimization-orchestrator-{int(_time.time())}"
+    tracing_context = TracingContext(execution_id=execution_id)
     tracing_context.start_trace(name="dspy_optimization", metadata={"module": "orchestrator"})
+    logger.debug(f"Started trace with ID: {tracing_context._trace_id}")
 
     try:
+        # Create teacher LM and wrap with tracing
+        # Pass None values to let get_teacher_lm use env var fallbacks
+        teacher_lm = get_teacher_lm(
+            base_url=optimizer.teacher_base_url or None,
+            model=optimizer.teacher_model or None,
+        )
+        traced_teacher_lm = TracedLM(teacher_lm, tracing_context, name="teacher")
+
         module = ToolOrchestratorModule(tracing_context=tracing_context)
         optimized = optimizer.optimize_orchestrator(
-            module, trainset=trainset, devset=devset
+            module, trainset=trainset, devset=devset, teacher_lm=traced_teacher_lm
         )
     finally:
         tracing_context.end_trace(status="completed")

@@ -93,6 +93,7 @@ class TracingContext:
             # across thread/async boundaries where OTEL context may fail
             self._trace_id = getattr(self._root_span, "trace_id", None)
             self._root_span_id = getattr(self._root_span, "id", None)
+            logger.debug(f"After start_as_current_observation: trace_id={self._trace_id}, span_id={self._root_span_id}")
 
             # Set trace-level attributes on the span (not the context manager)
             self._root_span.update_trace(

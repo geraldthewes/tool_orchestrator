@@ -328,11 +328,12 @@ def get_train_dev_split(
     Returns:
         Tuple of (train_examples, dev_examples)
     """
-    if seed is not None:
-        random.seed(seed)
+    # Use a local Random instance to avoid affecting global random state
+    # (which can interfere with Langfuse trace ID generation)
+    rng = random.Random(seed)
 
     shuffled = examples.copy()
-    random.shuffle(shuffled)
+    rng.shuffle(shuffled)
 
     split_idx = int(len(shuffled) * (1 - dev_ratio))
     train = shuffled[:split_idx]
