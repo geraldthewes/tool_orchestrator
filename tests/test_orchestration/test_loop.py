@@ -204,6 +204,90 @@ class TestStripTags:
         content = "The answer is 42."
         assert OrchestrationLoop._strip_tags(content) == content
 
+    def test_strip_incomplete_think_block(self):
+        """Should strip unclosed <think> blocks (truncated output)."""
+        content = "Some text <think>reasoning that was cut off"
+        stripped = OrchestrationLoop._strip_tags(content)
+        assert "<think>" not in stripped
+        assert "Some text" in stripped.strip()
+
+    def test_strip_incomplete_tool_call_block(self):
+        """Should strip unclosed <tool_call> blocks (truncated output)."""
+        content = (
+            'Some text <tool_call>{"name": "answer", "arguments": {"content": "partial'
+        )
+        stripped = OrchestrationLoop._strip_tags(content)
+        assert "<tool_call>" not in stripped
+        assert "Some text" in stripped.strip()
+
+    def test_strip_mixed_complete_and_incomplete(self):
+        """Should handle mix of complete and incomplete blocks."""
+        content = (
+            "<think>complete thinking</think>"
+            "Middle text "
+            '<tool_call>{"name": "answer", "arguments": {"content": "truncated'
+        )
+        stripped = OrchestrationLoop._strip_tags(content)
+        assert "<think>" not in stripped
+        assert "<tool_call>" not in stripped
+        assert "Middle text" in stripped
+
+
+class TestExtractPartialAnswer:
+    """Tests for _extract_partial_answer helper."""
+
+    def test_extract_complete_answer(self):
+        """Should extract content from complete answer tool_call."""
+        content = '<tool_call>{"name": "answer", "arguments": {"content": "The answer is 42"}}</tool_call>'
+        result = OrchestrationLoop._extract_partial_answer(content)
+        assert result == "The answer is 42"
+
+    def test_extract_truncated_answer(self):
+        """Should extract content from truncated answer tool_call."""
+        content = '<tool_call>{"name": "answer", "arguments": {"content": "The answer is 42 and here is more text that got cut'
+        result = OrchestrationLoop._extract_partial_answer(content)
+        assert result == "The answer is 42 and here is more text that got cut"
+
+    def test_extract_answer_with_escaped_quotes(self):
+        """Should handle escaped quotes in answer content."""
+        content = r'<tool_call>{"name": "answer", "arguments": {"content": "He said \"hello\" to me"}}</tool_call>'
+        result = OrchestrationLoop._extract_partial_answer(content)
+        assert result == 'He said "hello" to me'
+
+    def test_extract_answer_with_newlines(self):
+        """Should handle escaped newlines in answer content."""
+        content = r'<tool_call>{"name": "answer", "arguments": {"content": "Line 1\nLine 2"}}</tool_call>'
+        result = OrchestrationLoop._extract_partial_answer(content)
+        assert "Line 1\nLine 2" in result
+
+    def test_no_extraction_for_non_answer_tool(self):
+        """Should return None for non-answer tool calls."""
+        content = '<tool_call>{"name": "calculate", "arguments": {"expression": "2+2"}}</tool_call>'
+        result = OrchestrationLoop._extract_partial_answer(content)
+        assert result is None
+
+    def test_no_extraction_for_plain_text(self):
+        """Should return None for plain text without tool_call."""
+        content = "Just some plain text without any markers."
+        result = OrchestrationLoop._extract_partial_answer(content)
+        assert result is None
+
+    def test_extract_truncated_with_trailing_backslash(self):
+        """Should clean up trailing backslash from truncation."""
+        content = (
+            '<tool_call>{"name": "answer", "arguments": {"content": "Text ending with\\'
+        )
+        result = OrchestrationLoop._extract_partial_answer(content)
+        # Should strip the trailing backslash
+        assert result is not None
+        assert not result.endswith("\\")
+
+    def test_extract_answer_compact_json(self):
+        """Should handle compact JSON without spaces after colons."""
+        content = '<tool_call>{"name":"answer","arguments":{"content":"Compact format"}}</tool_call>'
+        result = OrchestrationLoop._extract_partial_answer(content)
+        assert result == "Compact format"
+
 
 class TestAntiRepetition:
     """Tests for anti-repetition tracking."""
@@ -275,6 +359,67 @@ class TestLoopExecution:
         result = loop.run("What is 42?")
 
         assert result.answer == "The answer is simply 42."
+        assert result.steps[0].is_final is True
+
+    @patch("src.orchestration.loop.OpenAI")
+    def test_truncated_tool_call_extracts_partial_answer(self, mock_openai_cls):
+        """Truncated answer tool_call should extract partial content."""
+        mock_client = Mock()
+        mock_openai_cls.return_value = mock_client
+
+        # Simulate truncated output - tool_call JSON is incomplete
+        truncated_content = (
+            "<think>I have the answer</think>\n\n"
+            '<tool_call>{"name": "answer", "arguments": {"content": "The answer is 42'
+        )
+        response = _make_mock_response(truncated_content)
+        mock_client.chat.completions.create.return_value = response
+
+        loop = OrchestrationLoop()
+        result = loop.run("What is the answer?")
+
+        # Should extract the partial answer, not show raw markers
+        assert "<tool_call>" not in result.answer
+        assert "The answer is 42" in result.answer
+        assert result.steps[0].is_final is True
+
+    @patch("src.orchestration.loop.OpenAI")
+    def test_incomplete_tool_call_strips_markers(self, mock_openai_cls):
+        """Incomplete non-answer tool_call should strip markers from output."""
+        mock_client = Mock()
+        mock_openai_cls.return_value = mock_client
+
+        # Truncated non-answer tool call - should strip and return clean content
+        truncated_content = (
+            "Let me help with that.\n"
+            '<tool_call>{"name": "calculate", "arguments": {"expression": "2+2'
+        )
+        response = _make_mock_response(truncated_content)
+        mock_client.chat.completions.create.return_value = response
+
+        loop = OrchestrationLoop()
+        result = loop.run("Calculate something")
+
+        # Should strip the incomplete tool_call markers
+        assert "<tool_call>" not in result.answer
+        assert "Let me help with that." in result.answer
+
+    @patch("src.orchestration.loop.OpenAI")
+    def test_empty_content_after_strip_shows_placeholder(self, mock_openai_cls):
+        """Empty content after stripping tags should show placeholder."""
+        mock_client = Mock()
+        mock_openai_cls.return_value = mock_client
+
+        # Content that becomes empty after stripping
+        content = '<tool_call>{"name": "calculate"'
+        response = _make_mock_response(content)
+        mock_client.chat.completions.create.return_value = response
+
+        loop = OrchestrationLoop()
+        result = loop.run("What?")
+
+        # Should show placeholder, not empty or raw markers
+        assert result.answer == "[Response generation incomplete]"
         assert result.steps[0].is_final is True
 
     @patch("src.orchestration.loop.OpenAI")

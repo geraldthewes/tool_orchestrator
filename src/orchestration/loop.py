@@ -194,10 +194,23 @@ class OrchestrationLoop:
             # 6. Parse <tool_call> XML from text
             tool_call = self._parse_tool_call(content)
             if tool_call is None:
-                # No tool call: treat content as the answer
-                clean_content = self._strip_tags(content).strip()
+                # No valid tool call parsed - may be truncated output
+                # Try to extract partial answer from truncated tool_call
+                partial_answer = self._extract_partial_answer(content)
+                if partial_answer:
+                    logger.warning("Extracted partial answer from truncated tool_call")
+                    clean_content = partial_answer
+                else:
+                    # Strip any XML tags (complete or incomplete) from content
+                    clean_content = self._strip_tags(content).strip()
+
                 step.is_final = True
-                step.final_answer = clean_content or content
+                # Never return raw content with markers - use placeholder if empty
+                step.final_answer = (
+                    clean_content
+                    if clean_content
+                    else "[Response generation incomplete]"
+                )
                 step.action = "answer"
                 self.steps.append(step)
                 self._log_trace_summary()
@@ -590,11 +603,53 @@ class OrchestrationLoop:
 
     @staticmethod
     def _strip_tags(content: str) -> str:
-        """Remove ``<think>`` and ``<tool_call>`` blocks from content."""
+        """Remove ``<think>`` and ``<tool_call>`` blocks from content.
+
+        Handles both complete blocks (with closing tags) and incomplete/truncated
+        blocks (where output was cut off mid-tag due to max_tokens).
+        """
+        # Remove complete blocks first
         result = re.sub(r"<think>.*?</think>", "", content, flags=re.DOTALL)
         result = re.sub(r"<tool_call>.*?</tool_call>", "", result, flags=re.DOTALL)
         result = re.sub(r"<message>(.*?)</message>", r"\1", result, flags=re.DOTALL)
+
+        # Remove incomplete/unclosed blocks (truncated output)
+        result = re.sub(r"<think>.*$", "", result, flags=re.DOTALL)
+        result = re.sub(r"<tool_call>.*$", "", result, flags=re.DOTALL)
+
         return result
+
+    @staticmethod
+    def _extract_partial_answer(content: str) -> Optional[str]:
+        """Extract answer content from a potentially truncated tool_call.
+
+        When the LLM output is truncated (hits max_tokens), the JSON inside
+        ``<tool_call>`` may be incomplete. This method attempts to extract
+        the answer content even from malformed JSON.
+
+        Args:
+            content: Raw LLM output that may contain truncated tool_call.
+
+        Returns:
+            Extracted answer text, or None if not an answer tool_call or
+            content cannot be extracted.
+        """
+        # Only attempt extraction for answer tool calls
+        if '"name": "answer"' not in content and '"name":"answer"' not in content:
+            return None
+
+        # Try to find content value even if JSON is incomplete
+        # Matches: "content": "some text that may be cut off
+        match = re.search(r'"content"\s*:\s*"((?:[^"\\]|\\.)*)', content, re.DOTALL)
+        if match:
+            # Unescape JSON string escapes
+            answer = match.group(1)
+            answer = answer.replace('\\"', '"').replace("\\n", "\n")
+            # Clean up trailing backslash from truncation and strip whitespace
+            answer = answer.rstrip("\\").rstrip()
+            if answer:
+                return answer
+        return None
 
     def _synthesize_forced_answer(self) -> str:
         """Synthesize a best-effort answer from accumulated observations."""
