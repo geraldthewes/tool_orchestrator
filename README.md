@@ -19,6 +19,7 @@ Unlike frameworks like LangChain or LlamaIndex that require custom integration c
 - **ReAct orchestration** - Reason -> Action -> Observation -> Repeat until final answer
 - **Tool integration** - Web search (SearXNG), Python execution, math calculations
 - **Delegate LLMs** - Route specialized tasks to reasoning, coding, or fast-response models
+- **Context externalization** - RLM-inspired storage of large delegate outputs for selective retrieval
 - **Streaming support** - Server-sent events for real-time responses
 - **Observability** - Optional Langfuse tracing for request lifecycle monitoring
 
@@ -335,6 +336,26 @@ orchestrator:
 | `presence_penalty` | `0.0` | Penalty for using tokens that have appeared. Higher values encourage variety. |
 
 These parameters are passed to the LLM inference endpoint (vLLM/SGLang/etc.) via the OpenAI-compatible API.
+
+### Context Externalization
+
+When delegate LLMs produce long responses (e.g., detailed analysis from a reasoning model), the orchestrator can externalize this content rather than truncating it. This is inspired by the RLM paper's insight that "long prompts should not be fed into the neural network directly but should instead be treated as part of the environment that the LLM can symbolically interact with."
+
+```yaml
+orchestrator:
+  # Context externalization settings
+  externalize_threshold: 4000    # Chars above which to externalize delegate content
+  delegates_budget: 8000         # Token budget for delegate responses in context
+  keep_recent_delegate_full: 1   # Keep last N delegate calls in full (not externalized)
+```
+
+When a delegate response exceeds `externalize_threshold`:
+1. The full content is stored in an in-memory content store
+2. A summary is generated (extracted from `## Summary` section or via fast delegate)
+3. The observation buffer receives the summary + a reference ID (e.g., `ctx_abc123`)
+4. The `retrieve_context` tool becomes available for the orchestrator to fetch full content when needed
+
+This approach preserves expert reasoning that would otherwise be lost to truncation, while keeping the orchestrator's context window manageable.
 
 ### Environment Variable Interpolation
 

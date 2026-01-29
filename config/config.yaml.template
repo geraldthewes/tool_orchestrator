@@ -37,6 +37,12 @@ orchestrator:
   max_observation_tokens: 2048   # Max tokens per individual observation
   attempts_budget: 8000          # Token budget for attempt history
   code_budget: 12000             # Token budget for code/calculation results
+  delegates_budget: 8000         # Token budget for delegate responses
+  # Context externalization (RLM-inspired)
+  # When delegate responses exceed the threshold, they are stored externally
+  # and replaced with summaries + reference IDs for selective retrieval
+  externalize_threshold: 4000    # Chars above which to externalize delegate content
+  keep_recent_delegate_full: 1   # Keep last N delegate calls in full (not externalized)
 
 # =============================================================================
 # API SERVER

@@ -24,9 +24,11 @@ from ..config_loader import get_delegates_from_app_config
 from ..models import DelegatesConfiguration
 from ..models.delegate import DelegateConfig
 from ..tools.registry import ToolDefinition, ToolRegistry
-from ..tools.llm_delegate import call_delegate, format_result_for_llm
+from ..tools.llm_delegate import call_delegate, call_delegate_by_role, format_result_for_llm
 from ..tracing import TracingContext
 from .buffers import ObservationBuffers, TokenBudgets
+from .content_store import ContentStore
+from .summarizer import Summarizer
 from .tool_defs import build_tool_definitions, build_tools_prompt_block
 
 logger = logging.getLogger(__name__)
@@ -102,19 +104,48 @@ class OrchestrationLoop:
         )
         self._model = config.orchestrator.model
 
+        # Context externalization components
+        self._content_store = ContentStore()
+        self._summarizer = self._create_summarizer()
+
         # Observation buffers with token budgets from config
         self._buffers = ObservationBuffers(
             budgets=TokenBudgets(
                 attempts=config.orchestrator.attempts_budget,
                 code=config.orchestrator.code_budget,
-                delegates=config.orchestrator.code_budget,
+                delegates=config.orchestrator.delegates_budget,
             ),
             max_observation_chars=config.orchestrator.max_observation_tokens * 4,
+            externalize_threshold=config.orchestrator.externalize_threshold,
+            keep_recent_delegate_full=config.orchestrator.keep_recent_delegate_full,
+        )
+
+        # Wire up externalization dependencies
+        self._buffers.set_externalization_deps(
+            content_store=self._content_store,
+            summarizer=self._summarizer,
         )
 
         # State
         self.steps: list[OrchestrationStep] = []
         self._call_history: list[str] = []  # Track tool call sequence
+
+    def _create_summarizer(self) -> Summarizer:
+        """Create a Summarizer with fast delegate caller if available."""
+
+        def fast_delegate_caller(prompt: str) -> Optional[str]:
+            """Call the fast delegate for summary generation."""
+            if "fast" not in self.delegates_config.delegates:
+                return None
+            try:
+                result = call_delegate_by_role("fast", prompt, max_tokens=500)
+                if result.get("success"):
+                    return result.get("response")
+            except Exception as e:
+                logger.debug("Fast delegate call for summary failed: %s", e)
+            return None
+
+        return Summarizer(fast_delegate_caller=fast_delegate_caller)
 
     def run(self, query: str) -> OrchestrationResult:
         """
@@ -165,9 +196,12 @@ class OrchestrationLoop:
             excluded = self._get_excluded_tools()
 
             # 2. Build tool definitions and system prompt with <tools> block
+            # Include retrieve_context tool if we have externalized content
+            has_externalized = len(self._content_store) > 0
             tool_defs = build_tool_definitions(
                 delegates_config=self.delegates_config,
                 exclude_tools=excluded,
+                include_retrieve_context=has_externalized,
             )
             system_prompt = SYSTEM_PROMPT + build_tools_prompt_block(tool_defs)
 
@@ -419,6 +453,10 @@ class OrchestrationLoop:
         if tool_name.startswith("ask_"):
             return self._execute_delegate(tool_name, tool_args, step_num)
 
+        # Check if it's the retrieve_context tool
+        if tool_name == "retrieve_context":
+            return self._execute_retrieve_context(tool_args, step_num)
+
         # Look up in registry
         tool_def = ToolRegistry.get(tool_name)
         if not tool_def:
@@ -559,6 +597,82 @@ class OrchestrationLoop:
                 if len(error_msg) > 500:
                     error_msg = error_msg[:500] + "..."
                 return f"Delegate '{tool_name}' error: {error_msg}"
+
+    def _execute_retrieve_context(self, tool_args: dict, step_num: int) -> str:
+        """
+        Execute the retrieve_context tool to fetch externalized content.
+
+        Args:
+            tool_args: Arguments containing context_id, optional offset and limit.
+            step_num: Current step number (for logging).
+
+        Returns:
+            Retrieved content or error message.
+        """
+        id_prefix = f"[{self.execution_id}] " if self.execution_id else ""
+
+        context_id = tool_args.get("context_id", "")
+        if not context_id:
+            return "Error: context_id is required"
+
+        # Parse offset and limit with defaults
+        try:
+            offset = int(tool_args.get("offset", 0))
+        except (TypeError, ValueError):
+            offset = 0
+
+        try:
+            limit = int(tool_args.get("limit", 4000))
+        except (TypeError, ValueError):
+            limit = 4000
+
+        logger.debug(
+            "%sStep %d: retrieving context %s (offset=%d, limit=%d)",
+            id_prefix,
+            step_num,
+            context_id,
+            offset,
+            limit,
+        )
+
+        # Execute with tracing if available
+        if self.tracing_context:
+            return self._execute_retrieve_context_with_tracing(
+                context_id, offset, limit, step_num
+            )
+
+        content = self._content_store.retrieve(context_id, offset=offset, limit=limit)
+        if content is None:
+            return f"Error: Context ID '{context_id}' not found"
+
+        return content
+
+    def _execute_retrieve_context_with_tracing(
+        self,
+        context_id: str,
+        offset: int,
+        limit: int,
+        step_num: int,
+    ) -> str:
+        """Execute retrieve_context with tracing."""
+        if self.tracing_context is None:
+            return "Error: tracing context not available"
+
+        with self.tracing_context.span(
+            name="tool:retrieve_context",
+            input={"context_id": context_id, "offset": offset, "limit": limit},
+        ) as span:
+            content = self._content_store.retrieve(
+                context_id, offset=offset, limit=limit
+            )
+            if content is None:
+                span.set_status("error")
+                return f"Error: Context ID '{context_id}' not found"
+
+            span.set_output(
+                {"chars_retrieved": len(content), "preview": content[:200]}
+            )
+            return content
 
     @staticmethod
     def _extract_think_block(content: str) -> Optional[str]:

@@ -16,7 +16,7 @@ class TestTokenBudgets:
         budgets = TokenBudgets()
         assert budgets.attempts == 8000
         assert budgets.code == 12000
-        assert budgets.delegates == 12000
+        assert budgets.delegates == 8000  # Lower budget, externalization handles overflow
         assert budgets.total == 27000
 
     def test_custom_budgets(self):

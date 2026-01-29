@@ -593,3 +593,245 @@ class TestClose:
         loop.close()
 
         mock_client.close.assert_called_once()
+
+
+class TestContextExternalization:
+    """Tests for context externalization of large delegate responses."""
+
+    @patch("src.orchestration.loop.OpenAI")
+    def test_small_delegate_response_not_externalized(self, mock_openai_cls):
+        """Delegate responses below threshold should stay inline."""
+        mock_client = Mock()
+        mock_openai_cls.return_value = mock_client
+
+        # Step 1: Call delegate (small response)
+        delegate_tc = _make_tool_call_text("ask_fast", {"query": "Quick question"})
+        delegate_content = f"<think>Delegating</think>\n\n{delegate_tc}"
+        delegate_response = _make_mock_response(delegate_content)
+
+        # Step 2: Return answer
+        answer_tc = _make_tool_call_text("answer", {"content": "Done"})
+        answer_content = f"<think>Have answer</think>\n\n{answer_tc}"
+        answer_response = _make_mock_response(answer_content)
+
+        mock_client.chat.completions.create.side_effect = [
+            delegate_response,
+            answer_response,
+        ]
+
+        loop = OrchestrationLoop()
+
+        # Mock delegate call to return small content
+        with patch("src.orchestration.loop.call_delegate") as mock_delegate:
+            mock_delegate.return_value = {
+                "success": True,
+                "model": "fast-model",
+                "response": "Short response",
+                "error": None,
+            }
+            result = loop.run("Test query")
+
+        # Content store should be empty (no externalization)
+        assert len(loop._content_store) == 0
+        assert result.answer == "Done"
+
+    @patch("src.orchestration.loop.OpenAI")
+    def test_large_delegate_response_externalized(self, mock_openai_cls):
+        """Delegate responses above threshold should be externalized."""
+        mock_client = Mock()
+        mock_openai_cls.return_value = mock_client
+
+        # Step 1: Call delegate (large response expected)
+        delegate_tc = _make_tool_call_text("ask_reasoner", {"query": "Complex analysis"})
+        delegate_content = f"<think>Need deep analysis</think>\n\n{delegate_tc}"
+        delegate_response = _make_mock_response(delegate_content)
+
+        # Step 2: Return answer
+        answer_tc = _make_tool_call_text("answer", {"content": "Analysis complete"})
+        answer_content = f"<think>Got analysis</think>\n\n{answer_tc}"
+        answer_response = _make_mock_response(answer_content)
+
+        mock_client.chat.completions.create.side_effect = [
+            delegate_response,
+            answer_response,
+        ]
+
+        loop = OrchestrationLoop()
+        # Set low threshold for testing
+        loop._buffers.externalize_threshold = 100
+
+        # Mock delegate call to return large content
+        large_response = "x" * 5000
+        with patch("src.orchestration.loop.call_delegate") as mock_delegate:
+            mock_delegate.return_value = {
+                "success": True,
+                "model": "reasoner-model",
+                "response": large_response,
+                "error": None,
+            }
+            result = loop.run("Test query")
+
+        # Content should be externalized
+        assert len(loop._content_store) == 1
+        assert result.answer == "Analysis complete"
+
+    @patch("src.orchestration.loop.OpenAI")
+    def test_retrieve_context_tool_execution(self, mock_openai_cls):
+        """retrieve_context tool should return stored content."""
+        mock_client = Mock()
+        mock_openai_cls.return_value = mock_client
+
+        loop = OrchestrationLoop()
+
+        # Pre-populate content store
+        content_id = loop._content_store.store(
+            content="This is the full externalized content",
+            tool_name="ask_reasoner",
+            step_number=1,
+            summary="A summary",
+        )
+
+        # Execute retrieve_context
+        result = loop._execute_tool(
+            "retrieve_context",
+            {"context_id": content_id},
+            step_num=2,
+        )
+
+        assert "This is the full externalized content" in result
+
+    @patch("src.orchestration.loop.OpenAI")
+    def test_retrieve_context_with_pagination(self, mock_openai_cls):
+        """retrieve_context should support offset and limit."""
+        mock_client = Mock()
+        mock_openai_cls.return_value = mock_client
+
+        loop = OrchestrationLoop()
+
+        # Store content
+        long_content = "0123456789" * 100  # 1000 chars
+        content_id = loop._content_store.store(
+            content=long_content,
+            tool_name="ask_coder",
+            step_number=1,
+            summary="Numbers",
+        )
+
+        # Retrieve with offset and limit
+        result = loop._execute_tool(
+            "retrieve_context",
+            {"context_id": content_id, "offset": 100, "limit": 50},
+            step_num=2,
+        )
+
+        assert "[Showing chars 100-150 of 1000]" in result
+        assert "[850 chars remaining]" in result
+
+    @patch("src.orchestration.loop.OpenAI")
+    def test_retrieve_context_unknown_id_returns_error(self, mock_openai_cls):
+        """retrieve_context with unknown ID should return error."""
+        mock_client = Mock()
+        mock_openai_cls.return_value = mock_client
+
+        loop = OrchestrationLoop()
+
+        result = loop._execute_tool(
+            "retrieve_context",
+            {"context_id": "ctx_nonexistent"},
+            step_num=1,
+        )
+
+        assert "Error" in result
+        assert "not found" in result
+
+    @patch("src.orchestration.loop.OpenAI")
+    def test_retrieve_context_missing_id_returns_error(self, mock_openai_cls):
+        """retrieve_context without context_id should return error."""
+        mock_client = Mock()
+        mock_openai_cls.return_value = mock_client
+
+        loop = OrchestrationLoop()
+
+        result = loop._execute_tool(
+            "retrieve_context",
+            {},
+            step_num=1,
+        )
+
+        assert "Error" in result
+        assert "context_id is required" in result
+
+    @patch("src.orchestration.loop.OpenAI")
+    def test_tool_defs_include_retrieve_context_when_externalized(self, mock_openai_cls):
+        """Tool definitions should include retrieve_context when content is externalized."""
+        from src.orchestration.tool_defs import build_tool_definitions
+
+        mock_client = Mock()
+        mock_openai_cls.return_value = mock_client
+
+        loop = OrchestrationLoop()
+
+        # Store some content to trigger externalization
+        loop._content_store.store(
+            content="Externalized content",
+            tool_name="ask_reasoner",
+            step_number=1,
+            summary="Summary",
+        )
+
+        # Build tool definitions with externalized content present
+        tool_defs = build_tool_definitions(
+            delegates_config=loop.delegates_config,
+            include_retrieve_context=True,
+        )
+
+        tool_names = [t["function"]["name"] for t in tool_defs]
+        assert "retrieve_context" in tool_names
+
+    @patch("src.orchestration.loop.OpenAI")
+    def test_tool_defs_exclude_retrieve_context_when_empty(self, mock_openai_cls):
+        """Tool definitions should exclude retrieve_context when no content externalized."""
+        from src.orchestration.tool_defs import build_tool_definitions
+
+        mock_client = Mock()
+        mock_openai_cls.return_value = mock_client
+
+        loop = OrchestrationLoop()
+
+        # No externalized content
+        tool_defs = build_tool_definitions(
+            delegates_config=loop.delegates_config,
+            include_retrieve_context=False,
+        )
+
+        tool_names = [t["function"]["name"] for t in tool_defs]
+        assert "retrieve_context" not in tool_names
+
+    @patch("src.orchestration.loop.OpenAI")
+    def test_externalized_observation_contains_reference(self, mock_openai_cls):
+        """Externalized observations should contain context ID reference."""
+        mock_client = Mock()
+        mock_openai_cls.return_value = mock_client
+
+        loop = OrchestrationLoop()
+        loop._buffers.externalize_threshold = 50
+
+        # Add a large delegate observation
+        large_content = "Response from gpt-oss-120b:\n\n" + "x" * 5000
+        content_id = loop._buffers.add_delegate_observation(
+            tool_name="ask_reasoner",
+            content=large_content,
+            step_number=1,
+        )
+
+        # Should have externalized
+        assert content_id is not None
+        assert content_id.startswith("ctx_")
+
+        # Check the observation buffer entry
+        assert len(loop._buffers._delegate_list) == 1
+        entry = loop._buffers._delegate_list[0]
+        assert entry.is_externalized
+        assert entry.content_id == content_id
+        assert "retrieve_context" in entry.content
+        assert content_id in entry.content

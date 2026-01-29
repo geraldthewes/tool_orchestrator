@@ -39,10 +39,51 @@ ANSWER_TOOL: dict = {
     },
 }
 
+# Context retrieval tool for externalized delegate responses.
+RETRIEVE_CONTEXT_TOOL: dict = {
+    "type": "function",
+    "function": {
+        "name": "retrieve_context",
+        "description": (
+            "Retrieve full content from a previous delegate response that was "
+            "externalized due to length. Use this when you need more detail "
+            "from a delegate's response than what's shown in the summary."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "context_id": {
+                    "type": "string",
+                    "description": (
+                        "The context ID (e.g., 'ctx_abc123') from an externalized "
+                        "delegate response."
+                    ),
+                },
+                "offset": {
+                    "type": "integer",
+                    "description": (
+                        "Character offset to start from (default 0). Use for "
+                        "pagination through very long responses."
+                    ),
+                },
+                "limit": {
+                    "type": "integer",
+                    "description": (
+                        "Maximum characters to retrieve (default 4000). Increase "
+                        "if you need more context."
+                    ),
+                },
+            },
+            "required": ["context_id"],
+        },
+    },
+}
+
 
 def build_tool_definitions(
     delegates_config: Optional[DelegatesConfiguration] = None,
     exclude_tools: Optional[set[str]] = None,
+    include_retrieve_context: bool = False,
 ) -> list[dict]:
     """
     Build OpenAI function-calling tool definitions from the registry and delegates.
@@ -52,6 +93,8 @@ def build_tool_definitions(
             registry tools and the answer tool are included.
         exclude_tools: Set of tool names to exclude (for anti-repetition).
             The ``answer`` tool is never excluded.
+        include_retrieve_context: Whether to include the retrieve_context tool
+            for accessing externalized delegate content.
 
     Returns:
         List of OpenAI-format tool definitions.
@@ -126,6 +169,10 @@ def build_tool_definitions(
                     },
                 }
             )
+
+    # Include retrieve_context tool if externalization is active
+    if include_retrieve_context and "retrieve_context" not in exclude:
+        tools.append(RETRIEVE_CONTEXT_TOOL)
 
     # The answer tool is always included (never excluded).
     tools.append(ANSWER_TOOL)

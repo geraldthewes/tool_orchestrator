@@ -26,6 +26,10 @@ class OrchestratorConfig:
     max_observation_tokens: int = 2048
     attempts_budget: int = 8000
     code_budget: int = 12000
+    delegates_budget: int = 8000
+    # Context externalization settings
+    externalize_threshold: int = 4000  # Chars above which to externalize
+    keep_recent_delegate_full: int = 1  # Keep last N delegate calls in full
 
 
 @dataclass
