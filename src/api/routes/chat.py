@@ -317,4 +317,7 @@ def _flush_tracing() -> None:
     """Flush tracing client if available."""
     client = get_tracing_client()
     if client:
+        logger.debug(f"Flushing tracing client (enabled={client.enabled})")
         client.flush()
+    else:
+        logger.debug("Flush skipped: no tracing client available")

@@ -151,10 +151,13 @@ class TracingClient:
     def flush(self) -> None:
         """Flush any pending events to Langfuse."""
         if not self._enabled or not self._client:
+            logger.debug("Flush skipped: tracing not enabled")
             return
 
         try:
+            logger.debug("Flushing Langfuse events...")
             self._client.flush()
+            logger.debug("Langfuse flush completed")
         except Exception as e:
             logger.warning(f"Failed to flush tracing events: {e}")
 
