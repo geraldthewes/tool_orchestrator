@@ -6,19 +6,14 @@ FROM python:3.11-slim
 # =============================================================================
 # CONFIGURATION
 # =============================================================================
-# Configuration is loaded from config/config.yaml (or path in CONFIG_PATH env var).
-# The config file supports ${VAR:-default} syntax for environment variable interpolation.
+# Configuration is fetched from Consul KV at container startup.
+# Push config to Consul via `make push-config` from config/config.yaml.
 #
-# To override the config file path:
-#   CONFIG_PATH=/path/to/config.yaml
+# Required environment variable:
+#   CONSUL_HTTP_ADDR - Consul HTTP address (e.g., http://consul.service.consul:8500)
 #
-# Common environment variables that can be interpolated in config:
-#   ORCHESTRATOR_BASE_URL, ORCHESTRATOR_MODEL
-#   REASONING_LLM_BASE_URL, REASONING_LLM_MODEL
-#   CODING_LLM_BASE_URL, CODING_LLM_MODEL
-#   FAST_LLM_URL, FAST_LLM_MODEL
-#
-# See config/config.yaml.template for full configuration options.
+# The container will fail to start if Consul is unavailable or config is missing.
+# See config/config.yaml.template for configuration options.
 # =============================================================================
 
 WORKDIR /app
@@ -40,12 +35,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends curl \
 COPY docker-entrypoint.sh /app/
 RUN chmod +x /app/docker-entrypoint.sh
 
-# Set default environment variables
+# Set Python environment variables
 ENV PYTHONPATH=/app
 ENV PYTHONUNBUFFERED=1
-ENV SERVER_HOST=0.0.0.0
-ENV SERVER_PORT=8000
-ENV LOG_LEVEL=INFO
 
 # Expose port
 EXPOSE 8000

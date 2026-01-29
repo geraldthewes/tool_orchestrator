@@ -48,11 +48,14 @@ For full deployment guidance, see the [Cluster Deployment Guide](https://cluster
 **Preferred: Use Makefile targets**
 
 ```bash
-make build    # Push code and build Docker image
-make deploy   # Deploy to Nomad cluster and restart to pull new image
-make restart  # Restart running allocations to pull new image
-make status   # Check deployment status
+make push-config  # Push config/config.yaml to Consul KV (run after config changes)
+make build        # Push code and build Docker image
+make deploy       # Deploy to Nomad cluster and restart to pull new image
+make restart      # Restart running allocations to pull new image
+make status       # Check deployment status
 ```
+
+**Configuration updates:** Run `make push-config` after editing `config/config.yaml`. The container fetches config from Consul at startup, so restart is needed for config changes to take effect.
 
 **Manual commands (if needed)**
 
@@ -84,7 +87,7 @@ nomad job status tool-orchestrator
 
 - **`src/config.py`**: Configuration management. Loads unified config from `config/config.yaml`.
 
-- **`src/config_loader.py`**: YAML configuration loader. Supports `${VAR:-default}` syntax for environment variable interpolation.
+- **`src/config_loader.py`**: YAML configuration loader. Loads config from `config/config.yaml` (fetched from Consul in production).
 
 ### Delegate System
 
@@ -115,25 +118,48 @@ DSPy-based query routing for fast-path decisions. Uses a fast LLM to determine w
 
 ## Configuration
 
-All configuration is in a single YAML file: `config/config.yaml`
+All configuration is managed through `config/config.yaml` and stored in Consul KV.
+
+### Configuration Workflow
 
 ```bash
-# Copy template and configure
+# 1. Create local config from template (first time only)
 cp config/config.yaml.template config/config.yaml
+
+# 2. Edit config/config.yaml with actual values (including secrets)
+
+# 3. Push config to Consul KV (required before deploy)
+make push-config
+
+# 4. Deploy (container fetches config from Consul at startup)
+make deploy
 ```
 
-The config file supports environment variable interpolation with `${VAR:-default}` syntax.
+**IMPORTANT:**
+- `config/config.yaml` is gitignored - it contains secrets (API keys, Langfuse credentials)
+- All configuration values go directly in config.yaml - no environment variable interpolation in production
+- Always run `make push-config` after editing config.yaml to update the deployed configuration
+- The Docker container fetches config from Consul at startup via `CONSUL_HTTP_ADDR`
 
-**Key sections:**
+### Key Sections
+
 - `orchestrator`: Main orchestrator LLM endpoint, model, and observation budgets
 - `server`: API server settings (host, port, workers)
 - `tools`: SearXNG endpoint and Python executor settings
 - `fast_path`: Fast-path routing for simple queries
 - `logging`: Log level configuration
-- `langfuse`: Observability settings
+- `langfuse`: Observability settings (including public_key, secret_key, host)
 - `delegates`: Delegate LLM definitions (reasoner, coder, fast)
 
-**Note:** `config/config.yaml` is gitignored as it may contain secrets.
+### Local Development
+
+For local development, copy the template and edit with your endpoints:
+
+```bash
+cp config/config.yaml.template config/config.yaml
+# Edit with your local/dev endpoints
+python -m src.interactive  # Uses local config
+```
 
 ## Testing
 
