@@ -267,17 +267,22 @@ def create_chat_completion(
         # Build trace if requested
         trace = None
         if request.include_trace:
-            trace = [
-                TraceStep(
-                    step=step["step"],
-                    reasoning=step.get("reasoning"),
-                    action=step.get("action"),
-                    action_input=step.get("action_input"),
-                    observation=step.get("observation"),
-                    is_final=step.get("is_final", False),
+            trace = []
+            for step in orchestrator.get_trace():
+                # Convert action_input to JSON string if it's a dict
+                action_input = step.get("action_input")
+                if isinstance(action_input, dict):
+                    action_input = json.dumps(action_input)
+                trace.append(
+                    TraceStep(
+                        step=step["step"],
+                        reasoning=step.get("reasoning"),
+                        action=step.get("action"),
+                        action_input=action_input,
+                        observation=step.get("observation"),
+                        is_final=step.get("is_final", False),
+                    )
                 )
-                for step in orchestrator.get_trace()
-            ]
 
         tracing_context.end_trace(
             output=answer,
